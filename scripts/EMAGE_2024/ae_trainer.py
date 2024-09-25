@@ -17,6 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.nn.parallel import DistributedDataParallel as DDP
 from loguru import logger
 import smplx
+from tqdm import tqdm
 
 from utils import config, logger_tools, other_tools, metric
 from utils import rotation_conversions as rc
@@ -82,7 +83,7 @@ class CustomTrainer(train.BaseTrainer):
         self.model.train()
         t_start = time.time()
         self.tracker.reset()
-        for its, dict_data in enumerate(self.train_loader):
+        for its, dict_data in enumerate(tqdm(self.train_loader,desc='train')):
             tar_pose = dict_data["pose"]
             tar_beta = dict_data["beta"].cuda()
             tar_trans = dict_data["trans"].cuda()
@@ -189,6 +190,15 @@ class CustomTrainer(train.BaseTrainer):
             lr_g = self.opt.param_groups[0]['lr']
             if its % self.args.log_period == 0:
                 self.train_recording(epoch, its, t_data, t_train, mem_cost, lr_g)   
+            if its % 200 == 0:
+                other_tools.save_checkpoints(os.path.join(self.checkpoint_path, 
+                                                          f"epoch_{epoch:04}_iter_{its:05}.bin"), 
+                                                          self.model, 
+                                                          opt=None, 
+                                                          epoch=None, 
+                                                          lrs=None)
+                self.val(epoch)
+                self.model.train()
             if self.args.debug:
                 if its == 1: break
         self.opt_s.step(epoch)
@@ -197,7 +207,7 @@ class CustomTrainer(train.BaseTrainer):
         self.model.eval()
         t_start = time.time()
         with torch.no_grad():
-            for its, dict_data in enumerate(self.val_loader):
+            for its, dict_data in enumerate(tqdm(self.val_loader,desc='val')):
                 tar_pose = dict_data["pose"]
                 tar_beta = dict_data["beta"].cuda()
                 tar_trans = dict_data["trans"].cuda()
@@ -263,20 +273,30 @@ class CustomTrainer(train.BaseTrainer):
         results_save_path = self.checkpoint_path + f"/{epoch}/"
         if os.path.exists(results_save_path): 
             return 0
-        os.makedirs(results_save_path)
+        # os.makedirs(results_save_path)
         start_time = time.time()
         total_length = 0
         test_seq_list = self.test_data.selected_file
         self.model.eval()
+        from tqdm import tqdm,trange
         with torch.no_grad():
-            for its, dict_data in enumerate(self.test_loader):
+            for its, dict_data in tqdm(enumerate(self.test_loader),desc='examples',total=len(self.test_loader)):
                 tar_pose = dict_data["pose"]
                 tar_pose = tar_pose.cuda()
                 bs, n, j = tar_pose.shape[0], tar_pose.shape[1], self.joints
                 tar_pose = rc.axis_angle_to_matrix(tar_pose.reshape(bs, n, j, 3))
                 tar_pose = rc.matrix_to_rotation_6d(tar_pose).reshape(bs, n, j*6)
-                remain = n%self.args.pose_length
-                tar_pose = tar_pose[:, :n-remain, :]
+                # remain = n%self.args.pose_length
+                # tar_pose = tar_pose[:, :n-remain, :]
+                ################################################################
+                gt_npz = np.load(self.args.data_path+self.args.pose_rep+"/"+test_seq_list.iloc[its]['id']+'.npz', allow_pickle=True)
+                tar_beta = torch.from_numpy(np.repeat(gt_npz['betas'].reshape(1,300),n,0)).cuda()
+                tar_trans = torch.from_numpy(gt_npz['trans'][:n].astype(np.float32)).cuda() * 0
+                tar_exps = torch.from_numpy(gt_npz['expressions'][:n].astype(np.float32)).cuda() * 0
+                # tar_beta = dict_data["beta"].cuda()
+                # tar_trans = dict_data["trans"].cuda()
+                # tar_exps = torch.zeros((bs, n, 100)).cuda()
+                ################################################################
                 #print(tar_pose.shape)
                 if True:
                     net_out = self.model(tar_pose)
@@ -286,7 +306,7 @@ class CustomTrainer(train.BaseTrainer):
                     rec_pose = rec_pose.reshape(bs, n, j, 6) 
                     rec_pose = rc.rotation_6d_to_matrix(rec_pose)#
                     rec_pose = rc.matrix_to_axis_angle(rec_pose).reshape(bs*n, j*3)
-                    rec_pose = rec_pose.cpu().numpy()
+                    # rec_pose = rec_pose.cpu().numpy()
                 else:
                     pass
 #                     for i in range(tar_pose.shape[1]//(self.args.vae_test_len)):
@@ -309,33 +329,84 @@ class CustomTrainer(train.BaseTrainer):
                             
                 tar_pose = rc.rotation_6d_to_matrix(tar_pose.reshape(bs, n, j, 6))
                 tar_pose = rc.matrix_to_axis_angle(tar_pose).reshape(bs*n, j*3)
-                tar_pose = tar_pose.cpu().numpy()
+                # tar_pose = tar_pose.cpu().numpy()
                 
                 total_length += n 
                 # --- save --- #
                 if 'smplx' in self.args.pose_rep:
-                    gt_npz = np.load(self.args.data_path+self.args.pose_rep+"/"+test_seq_list.iloc[its]['id']+'.npz', allow_pickle=True)
-                    stride = int(30 / self.args.pose_fps)
-                    tar_pose = self.inverse_selection(tar_pose, self.test_data.joint_mask, tar_pose.shape[0])
-                    np.savez(results_save_path+"gt_"+test_seq_list.iloc[its]['id']+'.npz',
-                        betas=gt_npz["betas"],
-                        poses=tar_pose[:n],
-                        expressions=gt_npz["expressions"]-gt_npz["expressions"],
-                        trans=gt_npz["trans"][::stride][:n] - gt_npz["trans"][::stride][:n],
-                        model='smplx2020',
-                        gender='neutral',
-                        mocap_frame_rate = 30 ,
+                    # gt_npz = np.load(self.args.data_path+self.args.pose_rep+"/"+test_seq_list.iloc[its]['id']+'.npz', allow_pickle=True)
+                    # stride = int(30 / self.args.pose_fps)
+                    # tar_pose = self.inverse_selection(tar_pose, self.test_data.joint_mask, tar_pose.shape[0])
+                    # np.savez(results_save_path+"gt_"+test_seq_list.iloc[its]['id']+'.npz',
+                    #     betas=gt_npz["betas"],
+                    #     poses=tar_pose[:n],
+                    #     expressions=gt_npz["expressions"]-gt_npz["expressions"],
+                    #     trans=gt_npz["trans"][::stride][:n] - gt_npz["trans"][::stride][:n],
+                    #     model='smplx2020',
+                    #     gender='neutral',
+                    #     mocap_frame_rate = 30 ,
+                    # )
+                    # rec_pose = self.inverse_selection(rec_pose, self.test_data.joint_mask, rec_pose.shape[0])
+                    # np.savez(results_save_path+"res_"+test_seq_list.iloc[its]['id']+'.npz',
+                    #     betas=gt_npz["betas"],
+                    #     poses=rec_pose,
+                    #     expressions=gt_npz["expressions"]-gt_npz["expressions"],
+                    #     trans=gt_npz["trans"][::stride][:n] - gt_npz["trans"][::stride][:n],
+                    #     model='smplx2020',
+                    #     gender='neutral',
+                    #     mocap_frame_rate = 30 ,
+                    # )       
+                    ############################################################
+                    import trimesh
+                    assert bs == 1
+                    # tar_pose,rec_pose = torch.from_numpy(tar_pose).cuda(),torch.from_numpy(rec_pose).cuda()
+                    tar_pose = self.inverse_selection_tensor(tar_pose, self.test_data.joint_mask, tar_pose.shape[0])
+                    rec_pose = self.inverse_selection_tensor(rec_pose, self.test_data.joint_mask, rec_pose.shape[0])
+                    body = self.smplx(
+                        betas=tar_beta.reshape(bs*n, 300), 
+                        transl=tar_trans.reshape(bs*n, 3), 
+                        expression=tar_exps.reshape(bs*n, 100), 
+                        jaw_pose=rec_pose[:, 66:69], 
+                        global_orient=rec_pose[:,:3], 
+                        body_pose=rec_pose[:,3:21*3+3], 
+                        left_hand_pose=rec_pose[:,25*3:40*3], 
+                        right_hand_pose=rec_pose[:,40*3:55*3], 
+                        return_verts=True, 
+                        leye_pose=tar_pose[:, 69:72], 
+                        reye_pose=tar_pose[:, 72:75],
                     )
-                    rec_pose = self.inverse_selection(rec_pose, self.test_data.joint_mask, rec_pose.shape[0])
-                    np.savez(results_save_path+"res_"+test_seq_list.iloc[its]['id']+'.npz',
-                        betas=gt_npz["betas"],
-                        poses=rec_pose,
-                        expressions=gt_npz["expressions"]-gt_npz["expressions"],
-                        trans=gt_npz["trans"][::stride][:n] - gt_npz["trans"][::stride][:n],
-                        model='smplx2020',
-                        gender='neutral',
-                        mocap_frame_rate = 30 ,
-                    )       
+                    vertices = body.vertices.detach().cpu().numpy()
+                    ply_d = 'meshes/' + test_seq_list.iloc[its]['id']
+                    os.makedirs(ply_d,exist_ok=True)
+                    for i in trange(n,desc='writing rec meshes',leave=False):
+                        ply_f = f'{ply_d}/{i:05}.ply'
+                        mesh = trimesh.Trimesh(vertices=vertices[i],
+                                               faces=self.smplx.faces,
+                                               process=False)
+                        mesh.export(ply_f)
+                    body = self.smplx(
+                        betas=tar_beta.reshape(bs*n, 300), 
+                        transl=tar_trans.reshape(bs*n, 3), 
+                        expression=tar_exps.reshape(bs*n, 100), 
+                        jaw_pose=tar_pose[:, 66:69], 
+                        global_orient=tar_pose[:,:3], 
+                        body_pose=tar_pose[:,3:21*3+3], 
+                        left_hand_pose=tar_pose[:,25*3:40*3], 
+                        right_hand_pose=tar_pose[:,40*3:55*3], 
+                        return_verts=True, 
+                        leye_pose=tar_pose[:, 69:72], 
+                        reye_pose=tar_pose[:, 72:75],
+                    )
+                    vertices = body.vertices.detach().cpu().numpy()
+                    ply_d = 'meshes/' + test_seq_list.iloc[its]['id'] + '_gt'
+                    os.makedirs(ply_d,exist_ok=True)
+                    for i in trange(n,desc='writing tar meshes',leave=False):
+                        ply_f = f'{ply_d}/{i:05}.ply'
+                        mesh = trimesh.Trimesh(vertices=vertices[i],
+                                               faces=self.smplx.faces,
+                                               process=False)
+                        mesh.export(ply_f)
+                    ############################################################
                 else:
                     rec_pose = rc.axis_angle_to_matrix(torch.from_numpy(rec_pose.reshape(bs*n, j, 3)))
                     rec_pose = np.rad2deg(rc.matrix_to_euler_angles(rec_pose, "XYZ")).reshape(bs*n, j*3).numpy()                

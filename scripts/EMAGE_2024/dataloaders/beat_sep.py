@@ -17,6 +17,7 @@ import torch.distributed as dist
 import pyarrow
 import librosa
 import smplx
+from tqdm import tqdm
 
 from .build_vocab import Vocab
 from .utils.audio_features import Wav2Vec2Model
@@ -52,7 +53,12 @@ class CustomDataset(Dataset):
         # select trainable joints
         
         split_rule = pd.read_csv(args.data_path+"train_test_split.csv")
-        self.selected_file = split_rule.loc[(split_rule['type'] == loader_type) & (split_rule['id'].str.split("_").str[0].astype(int).isin(self.args.training_speakers))]
+        # if loader_type == 'test':
+        #     self.args.training_speakers = [12]
+        #     self.selected_file = split_rule.loc[(split_rule['type'] == loader_type) & (split_rule['id'].str.split("_").str[0].astype(int).isin(self.args.training_speakers))]
+        # else:
+        #     self.selected_file = split_rule.loc[(split_rule['type'] == loader_type) & (split_rule['id'].str.split("_").str[0].astype(int).isin(self.args.training_speakers))]
+        self.selected_file = split_rule.loc[(split_rule['type'] == loader_type)]
         if args.additional_data and loader_type == 'train':
             split_b = split_rule.loc[(split_rule['type'] == 'additional') & (split_rule['id'].str.split("_").str[0].astype(int).isin(self.args.training_speakers))]
             #self.selected_file = split_rule.loc[(split_rule['type'] == 'additional') & (split_rule['id'].str.split("_").str[0].astype(int).isin(self.args.training_speakers))]
@@ -116,11 +122,15 @@ class CustomDataset(Dataset):
         ).cuda().eval()
         dir_p = self.data_dir + self.args.pose_rep + "/"
         all_list = []
-        from tqdm import tqdm
         for tar in tqdm(os.listdir(dir_p)):
             if tar.endswith(".npz"):
                 m_data = np.load(dir_p+tar, allow_pickle=True)
-                betas, poses, trans, exps = m_data["betas"], m_data["poses"], m_data["trans"], m_data["expressions"]
+                if 'expressions' in m_data:
+                    betas, poses, trans, exps = m_data["betas"], m_data["poses"], m_data["trans"], m_data["expressions"]
+                else:
+                    betas, poses, trans = m_data["betas"], m_data["poses"], m_data["trans"]
+                    betas = np.concatenate([betas,np.zeros(300-16,dtype=betas.dtype)])
+                    exps = np.zeros((poses.shape[0],100))
                 n, c = poses.shape[0], poses.shape[1]
                 betas = betas.reshape(1, 300)
                 betas = np.tile(betas, (n, 1))
@@ -220,10 +230,12 @@ class CustomDataset(Dataset):
         self.n_out_samples = 0
         # create db for samples
         if not os.path.exists(out_lmdb_dir): os.makedirs(out_lmdb_dir)
-        dst_lmdb_env = lmdb.open(out_lmdb_dir, map_size= int(1024 ** 3 * 50))# 50G
+        dst_lmdb_env = lmdb.open(out_lmdb_dir, map_size= int(1024 ** 3 * 500))# 500G
         n_filtered_out = defaultdict(int)
     
-        for index, file_name in self.selected_file.iterrows():
+        for index, file_name in tqdm(self.selected_file.iterrows(),
+                                     desc='cache gen',
+                                     total=self.selected_file.shape[0]):
             f_name = file_name["id"]
             ext = ".npz" if "smplx" in self.args.pose_rep else ".bvh"
             pose_file = self.data_dir + self.args.pose_rep + "/" + f_name + ext
@@ -238,7 +250,7 @@ class CustomDataset(Dataset):
             vid_each_file = []
             id_pose = f_name #1_wayne_0_1_1
             
-            logger.info(colored(f"# ---- Building cache for Pose   {id_pose} ---- #", "blue"))
+            # logger.info(colored(f"# ---- Building cache for Pose   {id_pose} ---- #", "blue"))
             if "smplx" in self.args.pose_rep:
                 pose_data = np.load(pose_file, allow_pickle=True)
                 assert 30%self.args.pose_fps == 0, 'pose_fps should be an aliquot part of 30'
@@ -247,7 +259,12 @@ class CustomDataset(Dataset):
                 pose_each_file = pose_each_file[:, self.joint_mask.astype(bool)]
                 # print(pose_each_file.shape)
                 trans_each_file = pose_data["trans"][::stride]
-                shape_each_file = np.repeat(pose_data["betas"].reshape(1, 300), pose_each_file.shape[0], axis=0)
+                if pose_data['betas'].shape == (16,):
+                    betas_ = pose_data['betas']
+                    betas_ = np.concatenate([betas_,np.zeros(300-16,dtype=betas_.dtype)])
+                    shape_each_file = np.repeat(betas_.reshape(1, 300), pose_each_file.shape[0], axis=0)
+                else:
+                    shape_each_file = np.repeat(pose_data["betas"].reshape(1, 300), pose_each_file.shape[0], axis=0)
                 if self.args.facial_rep is not None:
                     logger.info(f"# ---- Building cache for Facial {id_pose} and Pose {id_pose} ---- #")
                     facial_each_file = pose_data["expressions"][::stride]
@@ -573,8 +590,8 @@ class CustomDataset(Dataset):
                 cut_length = int(self.ori_length*ratio)
                 
             num_subdivision = math.floor((clip_e_f_pose - clip_s_f_pose - cut_length) / self.args.stride) + 1
-            logger.info(f"pose from frame {clip_s_f_pose} to {clip_e_f_pose}, length {cut_length}")
-            logger.info(f"{num_subdivision} clips is expected with stride {self.args.stride}")
+            # logger.info(f"pose from frame {clip_s_f_pose} to {clip_e_f_pose}, length {cut_length}")
+            # logger.info(f"{num_subdivision} clips is expected with stride {self.args.stride}")
             
             if audio_each_file != []:
                 audio_short_length = math.floor(cut_length / self.args.pose_fps * self.args.audio_fps)

@@ -1,14 +1,15 @@
 is_train: True
 ddp: False
-stat: ts
+stat: wandb # ts
 training_speakers: [2]
 root_path: ./
-out_path: ./outputs/audio2pose/
-cache_path: datasets/beat_cache/beat_smplx_en_upper/
-project: mage_smplx
-data_path: ./BEAT2/beat_english_v2.0.0/
+out_path: ./outputs/
+cache_path: datasets/cache/upper/
+project: emage
+wandb_run: upper_amass30_beat2_c256
+data_path: ./emage_amass30_beat2/
 e_path:  weights/AESKConv_240_100.bin
-test_ckpt: weights/multi.bin
+# test_ckpt: EMAGE/pretrained_vq/upper_vertex_1layer_710.bin
 data_path_1: ./EMAGE/
 #torch_hub_path: datasets/hub/
 additional_data: False
@@ -79,4 +80,4 @@ rec_ver_weight: 1
 #fusion_mode: sum
 # grad_norm: 1
 epochs: 500
-test_period: 100
+test_period: 1

@@ -36,8 +36,8 @@ class BaseTrainer(object):
             if self.args.stat == "ts":
                 self.writer = SummaryWriter(log_dir=args.out_path + "custom/" + args.name + args.notes + "/")
             else:
-                wandb.init(project=args.project, entity="liu1997", dir=args.out_path, name=args.name[12:] + args.notes)
-                wandb.config.update(args)
+                wandb.init(project=args.project, entity="cerc-pac", dir=args.out_path, name=args.wandb_run)
+                # wandb.config.update(args)
                 self.writer = None  
         #self.test_demo = args.data_path + args.test_data_path + "bvh_full/"        
         self.train_data = __import__(f"dataloaders.{args.dataset}", fromlist=["something"]).CustomDataset(args, "train")
@@ -46,7 +46,7 @@ class BaseTrainer(object):
             batch_size=args.batch_size,  
             shuffle=False if args.ddp else True,  
             num_workers=args.loader_workers,
-            drop_last=True,
+            drop_last=False,
             sampler=torch.utils.data.distributed.DistributedSampler(self.train_data) if args.ddp else None, 
         )
         self.train_length = len(self.train_loader)
@@ -205,18 +205,25 @@ class BaseTrainer(object):
             metric = states['train']
             if metric.count > 0:
                 pstr += "{}: {:.3f}\t".format(name, metric.avg)
-                self.writer.add_scalar(f"train/{name}", metric.avg, epoch*self.train_length+its) if self.args.stat == "ts" else wandb.log({name: metric.avg}, step=epoch*self.train_length+its)
+                if self.args.stat == "ts":
+                    self.writer.add_scalar(f"train/{name}", metric.avg, epoch*self.train_length+its)  
+                else:
+                    wandb.log({'train/'+name: metric.avg}, 
+                              step=epoch*self.train_length+its)
         pstr += "glr: {:.1e}\t".format(lr_g)
-        self.writer.add_scalar("lr/glr", lr_g, epoch*self.train_length+its) if self.args.stat == "ts" else wandb.log({'glr': lr_g}, step=epoch*self.train_length+its)
+        if self.args.stat == "ts":
+            self.writer.add_scalar("lr/glr", lr_g, epoch*self.train_length+its)  
+        else:
+            wandb.log({'train/glr': lr_g}, step=epoch*self.train_length+its)
         if lr_d is not None:
             pstr += "dlr: {:.1e}\t".format(lr_d)
             self.writer.add_scalar("lr/dlr", lr_d, epoch*self.train_length+its) if self.args.stat == "ts" else wandb.log({'dlr': lr_d}, step=epoch*self.train_length+its)
         pstr += "dtime: %04d\t"%(t_data*1000)        
         pstr += "ntime: %04d\t"%(t_train*1000)
         pstr += "mem: {:.2f} ".format(mem_cost*len(self.args.gpus))
-        logger.info(pstr)
+        # logger.info(pstr)
      
-    def val_recording(self, epoch):
+    def val_recording(self, epoch, its):
         pstr_curr = "Curr info >>>>  "
         pstr_best = "Best info >>>>  "
         for name, states in self.tracker.loss_meters.items():
@@ -227,16 +234,17 @@ class BaseTrainer(object):
                     if self.args.stat == "ts":
                         self.writer.add_scalars(f"val/{name}", {name+"_val":metric.avg, name+"_train":states['train'].avg}, epoch*self.train_length)
                     else:
-                        wandb.log({name+"_val": metric.avg, name+"_train":states['train'].avg}, step=epoch*self.train_length)
+                        wandb.log({'val/'+name: metric.avg}, 
+                                   step=epoch*self.train_length+its)
                     new_best_train, new_best_val = self.tracker.update_and_plot(name, epoch, self.checkpoint_path+f"{name}_{self.args.name+self.args.notes}.png")
                     if new_best_val:
                         other_tools.save_checkpoints(os.path.join(self.checkpoint_path, f"{name}.bin"), self.model, opt=None, epoch=None, lrs=None)        
-        for k, v in self.tracker.values.items():
-            metric = v['val']['best']
-            if self.tracker.loss_meters[k]['val'].count > 0:
-                pstr_best += "{}: {:.3f}({:03d})\t".format(k, metric['value'], metric['epoch'])
-        logger.info(pstr_curr)
-        logger.info(pstr_best)
+        # for k, v in self.tracker.values.items():
+        #     metric = v['val']['best']
+        #     if self.tracker.loss_meters[k]['val'].count > 0:
+        #         pstr_best += "{}: {:.3f}({:03d})\t".format(k, metric['value'], metric['epoch'])
+        # logger.info(pstr_curr)
+        # logger.info(pstr_best)
    
     def test_recording(self, dict_name, value, epoch):
         self.tracker.update_meter(dict_name, "test", value)
@@ -258,8 +266,6 @@ def main_worker(rank, world_size, args):
     logger.info("Training from scratch ...")          
     start_time = time.time()
     for epoch in range(args.epochs+1):
-        if args.ddp: trainer.val_loader.sampler.set_epoch(epoch)
-        trainer.val(epoch)
         # if (epoch) % args.test_period == 1: trainer.val(epoch)
         epoch_time = time.time()-start_time
         if trainer.rank == 0: logger.info("Time info >>>>  elapsed: %.2f mins\t"%(epoch_time/60)+"remain: %.2f mins"%((args.epochs/(epoch+1e-7)-1)*epoch_time/60))
@@ -267,24 +273,26 @@ def main_worker(rank, world_size, args):
             if args.ddp: trainer.train_loader.sampler.set_epoch(epoch)
             trainer.tracker.reset()
             trainer.train(epoch)
-        if args.debug:
-            other_tools.save_checkpoints(os.path.join(trainer.checkpoint_path, f"last_{epoch}.bin"), trainer.model, opt=None, epoch=None, lrs=None)
-            other_tools.load_checkpoints(trainer.model, os.path.join(trainer.checkpoint_path, f"last_{epoch}.bin"), args.g_name)
-            #other_tools.load_checkpoints(trainer.model, "/home/s24273/datasets/hub/pretrained_vq/last_140.bin", args.g_name)
-            trainer.test(epoch)
+        if args.ddp: trainer.val_loader.sampler.set_epoch(epoch)
+        # trainer.val(epoch)
+        # if args.debug:
+        #     other_tools.save_checkpoints(os.path.join(trainer.checkpoint_path, f"last_{epoch}.bin"), trainer.model, opt=None, epoch=None, lrs=None)
+        #     other_tools.load_checkpoints(trainer.model, os.path.join(trainer.checkpoint_path, f"last_{epoch}.bin"), args.g_name)
+        #     #other_tools.load_checkpoints(trainer.model, "/home/s24273/datasets/hub/pretrained_vq/last_140.bin", args.g_name)
+        #     trainer.test(epoch)
         if (epoch) % args.test_period == 0 and epoch !=0:
             if rank == 0:
                 other_tools.save_checkpoints(os.path.join(trainer.checkpoint_path, f"last_{epoch}.bin"), trainer.model, opt=None, epoch=None, lrs=None)
-                trainer.test(epoch)
+                # trainer.test(epoch)
        
     if rank == 0:
-        for k, v in trainer.tracker.values.items():
-            if trainer.tracker.loss_meters[k]['val'].count > 0:
-                other_tools.load_checkpoints(trainer.model, os.path.join(trainer.checkpoint_path, f"{k}.bin"), args.g_name)
-                logger.info(f"inference on ckpt {k}_val_{v['val']['best']['epoch']}:")
-                trainer.test(v['val']['best']['epoch'])
-        other_tools.record_trial(args, trainer.tracker)
-        wandb.log({"fid_test": trainer.tracker["fid"]["test"]["best"]})
+        # for k, v in trainer.tracker.values.items():
+        #     if trainer.tracker.loss_meters[k]['val'].count > 0:
+        #         other_tools.load_checkpoints(trainer.model, os.path.join(trainer.checkpoint_path, f"{k}.bin"), args.g_name)
+        #         logger.info(f"inference on ckpt {k}_val_{v['val']['best']['epoch']}:")
+        #         trainer.test(v['val']['best']['epoch'])
+        # other_tools.record_trial(args, trainer.tracker)
+        # wandb.log({"fid_test": trainer.tracker["fid"]["test"]["best"]})
         if args.stat == "ts":
             trainer.writer.close()
         else:
@@ -293,7 +301,7 @@ def main_worker(rank, world_size, args):
             
 if __name__ == "__main__":
     os.environ["MASTER_ADDR"]='127.0.0.1'
-    os.environ["MASTER_PORT"]='8675'
+    os.environ["MASTER_PORT"]='8670'
     #os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
     args = config.parse_args()
     if args.ddp:

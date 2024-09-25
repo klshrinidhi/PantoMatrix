@@ -1,7 +1,9 @@
-*.pyc
-/BEAT2/
+BEAT2
 /datasets/
 /EMAGE/
 /outputs/
 *.pyc
-*.pyc
+.vscode
+__pycache__/
+datasets
+emage_amass30_beat2

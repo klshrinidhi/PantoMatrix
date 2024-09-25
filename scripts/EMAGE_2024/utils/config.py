@@ -101,7 +101,7 @@ def parse_args():
     parser.add("--sem_rep", default=None, type=str)
     parser.add("--facial_rep", default=None, type=str)
     parser.add("--pose_rep", default="bvhrot", type=str)
-    parser.add("--id_rep", default="onehot", type=str)
+    parser.add("--id_rep", default=None, type=str)
     parser.add("--speaker_id", default="onehot", type=str)
     
     parser.add("--a_pre_encoder", default=None, type=str)
@@ -256,7 +256,8 @@ def parse_args():
     parser.add("--render_tmp_img_filetype", default="bmp", type=str)
     
     # logging
-    parser.add("--log_period", default=10, type=int)
+    parser.add("--log_period", default=1, type=int)
+    parser.add("--wandb_run",type=str)
   
     
     args = parser.parse_args()
