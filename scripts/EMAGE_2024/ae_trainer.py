@@ -83,7 +83,7 @@ class CustomTrainer(train.BaseTrainer):
         self.model.train()
         t_start = time.time()
         self.tracker.reset()
-        for its, dict_data in enumerate(tqdm(self.train_loader,desc='train')):
+        for its, dict_data in enumerate(tqdm(self.train_loader,desc=f'train epoch {epoch}')):
             tar_pose = dict_data["pose"]
             tar_beta = dict_data["beta"].cuda()
             tar_trans = dict_data["trans"].cuda()
@@ -190,24 +190,24 @@ class CustomTrainer(train.BaseTrainer):
             lr_g = self.opt.param_groups[0]['lr']
             if its % self.args.log_period == 0:
                 self.train_recording(epoch, its, t_data, t_train, mem_cost, lr_g)   
-            if its % 200 == 0:
+            if its % 600 == 0:
                 other_tools.save_checkpoints(os.path.join(self.checkpoint_path, 
                                                           f"epoch_{epoch:04}_iter_{its:05}.bin"), 
                                                           self.model, 
                                                           opt=None, 
                                                           epoch=None, 
                                                           lrs=None)
-                self.val(epoch)
+                self.val(epoch,its)
                 self.model.train()
             if self.args.debug:
                 if its == 1: break
         self.opt_s.step(epoch)
                     
-    def val(self, epoch):
+    def val(self, epoch, train_its):
         self.model.eval()
         t_start = time.time()
         with torch.no_grad():
-            for its, dict_data in enumerate(tqdm(self.val_loader,desc='val')):
+            for its, dict_data in enumerate(tqdm(self.val_loader,desc=f'val epoch {epoch} iter {train_its}')):
                 tar_pose = dict_data["pose"]
                 tar_beta = dict_data["beta"].cuda()
                 tar_trans = dict_data["trans"].cuda()
@@ -267,7 +267,7 @@ class CustomTrainer(train.BaseTrainer):
                     loss_embedding = net_out["embedding_loss"]
                     self.tracker.update_meter("com", "val", loss_embedding.item())
                     #g_loss_final += vectices_loss*self.args.rec_weight*self.args.rec_ver_weight
-            self.val_recording(epoch)
+            self.val_recording(epoch,train_its)
             
     def test(self, epoch):
         results_save_path = self.checkpoint_path + f"/{epoch}/"

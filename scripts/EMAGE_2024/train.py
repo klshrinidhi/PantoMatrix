@@ -46,6 +46,7 @@ class BaseTrainer(object):
             batch_size=args.batch_size,  
             shuffle=False if args.ddp else True,  
             num_workers=args.loader_workers,
+            persistent_workers=True,
             drop_last=False,
             sampler=torch.utils.data.distributed.DistributedSampler(self.train_data) if args.ddp else None, 
         )
@@ -58,6 +59,7 @@ class BaseTrainer(object):
             batch_size=args.batch_size,  
             shuffle=False,  
             num_workers=args.loader_workers,
+            persistent_workers=True,
             drop_last=False,
             sampler=torch.utils.data.distributed.DistributedSampler(self.val_data) if args.ddp else None, 
         )
@@ -201,6 +203,8 @@ class BaseTrainer(object):
 
     def train_recording(self, epoch, its, t_data, t_train, mem_cost, lr_g, lr_d=None):
         pstr = "[%03d][%03d/%03d]  "%(epoch, its, self.train_length)
+        wandb.log({'epoch',epoch},
+                  step=epoch*self.train_length+its)
         for name, states in self.tracker.loss_meters.items():
             metric = states['train']
             if metric.count > 0:
@@ -230,15 +234,14 @@ class BaseTrainer(object):
             metric = states['val']
             if metric.count > 0:
                 pstr_curr += "{}: {:.3f}     \t".format(name, metric.avg)
-                if epoch != 0:
-                    if self.args.stat == "ts":
-                        self.writer.add_scalars(f"val/{name}", {name+"_val":metric.avg, name+"_train":states['train'].avg}, epoch*self.train_length)
-                    else:
-                        wandb.log({'val/'+name: metric.avg}, 
-                                   step=epoch*self.train_length+its)
-                    new_best_train, new_best_val = self.tracker.update_and_plot(name, epoch, self.checkpoint_path+f"{name}_{self.args.name+self.args.notes}.png")
-                    if new_best_val:
-                        other_tools.save_checkpoints(os.path.join(self.checkpoint_path, f"{name}.bin"), self.model, opt=None, epoch=None, lrs=None)        
+                if self.args.stat == "ts":
+                    self.writer.add_scalars(f"val/{name}", {name+"_val":metric.avg, name+"_train":states['train'].avg}, epoch*self.train_length)
+                else:
+                    wandb.log({'val/'+name: metric.avg}, 
+                                step=epoch*self.train_length+its)
+                new_best_train, new_best_val = self.tracker.update_and_plot(name, epoch, self.checkpoint_path+f"{name}_{self.args.name+self.args.notes}.png")
+                if new_best_val:
+                    other_tools.save_checkpoints(os.path.join(self.checkpoint_path, f"{name}.bin"), self.model, opt=None, epoch=None, lrs=None)        
         # for k, v in self.tracker.values.items():
         #     metric = v['val']['best']
         #     if self.tracker.loss_meters[k]['val'].count > 0:

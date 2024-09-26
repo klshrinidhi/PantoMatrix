@@ -1,7 +1,7 @@
 BEAT2
 /datasets/
 /EMAGE/
-/outputs/
+outputs
 *.pyc
 .vscode
 __pycache__/

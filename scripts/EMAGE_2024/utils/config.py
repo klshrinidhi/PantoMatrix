@@ -243,7 +243,7 @@ def parse_args():
     # mix precision
     parser.add("--apex", default=False, type=str2bool)
     parser.add("--gpus", default=[0], type=int, nargs="*")
-    parser.add("--loader_workers", default=0, type=int)
+    parser.add("--loader_workers", default=4, type=int)
     parser.add("--ddp", default=False, type=str2bool)
     parser.add("--sparse", default=1, type=int)
     #parser.add("--world_size")
@@ -256,7 +256,7 @@ def parse_args():
     parser.add("--render_tmp_img_filetype", default="bmp", type=str)
     
     # logging
-    parser.add("--log_period", default=1, type=int)
+    parser.add("--log_period", default=2, type=int)
     parser.add("--wandb_run",type=str)
   
     
@@ -269,8 +269,9 @@ def parse_args():
     is_train = args.is_train
 
     if is_train:
-        time_local = time.localtime()
-        name_expend = "%02d%02d_%02d%02d%02d_"%(time_local[1], time_local[2],time_local[3], time_local[4], time_local[5])
-        args.name = name_expend + args.name
+        # time_local = time.localtime()
+        # name_expend = "%02d%02d_%02d%02d%02d_"%(time_local[1], time_local[2],time_local[3], time_local[4], time_local[5])
+        # args.name = name_expend + args.name
+        args.name = args.wandb_run
         
     return args

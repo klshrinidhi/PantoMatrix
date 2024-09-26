@@ -4,7 +4,7 @@ stat: wandb # ts
 training_speakers: [2]
 root_path: ./
 out_path: ./outputs/
-cache_path: datasets/cache/upper/
+cache_path: datasets/cache/upper_amass30_beat2/
 project: emage
 wandb_run: upper_amass30_beat2_c256
 data_path: ./emage_amass30_beat2/
