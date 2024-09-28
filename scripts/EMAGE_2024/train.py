@@ -70,7 +70,7 @@ class BaseTrainer(object):
                 self.test_data, 
                 batch_size=1,  
                 shuffle=False,  
-                num_workers=args.loader_workers,
+                num_workers=0,
                 drop_last=False,
             )
         logger.info(f"Init test dataloader success")

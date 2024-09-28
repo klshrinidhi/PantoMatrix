@@ -268,7 +268,74 @@ class CustomTrainer(train.BaseTrainer):
                     self.tracker.update_meter("com", "val", loss_embedding.item())
                     #g_loss_final += vectices_loss*self.args.rec_weight*self.args.rec_ver_weight
             self.val_recording(epoch,train_its)
-            
+
+    def test_scores(self):
+        self.model.eval()
+        t_start = time.time()
+        scores = dict()
+        with torch.no_grad():
+            for its, dict_data in enumerate(tqdm(self.test_loader,desc=f'examples')):
+                id = self.test_data.selected_file.iloc[its]['id']
+
+                tar_pose = dict_data["pose"]
+                tar_beta = dict_data["beta"].cuda()
+                tar_trans = dict_data["trans"].cuda()
+                tar_pose = tar_pose.cuda()  
+                bs, n, j = tar_pose.shape[0], tar_pose.shape[1], self.joints
+                tar_exps = torch.zeros((bs, n, 100)).cuda()
+                tar_pose = rc.axis_angle_to_matrix(tar_pose.reshape(bs, n, j, 3))
+                tar_pose = rc.matrix_to_rotation_6d(tar_pose).reshape(bs, n, j*6)
+                t_data = time.time() - t_start 
+
+                #self.opt.zero_grad()
+                #g_loss_final = 0
+                net_out = self.model(tar_pose)
+                rec_pose = net_out["rec_pose"]
+                rec_pose = rec_pose.reshape(bs, n, j, 6)
+                rec_pose = rc.rotation_6d_to_matrix(rec_pose)#
+                tar_pose = rc.rotation_6d_to_matrix(tar_pose.reshape(bs, n, j, 6))
+                loss_rec = self.rec_loss(rec_pose, tar_pose) * self.args.rec_weight * self.args.rec_pos_weight
+
+                 # vertices loss
+                if self.args.rec_ver_weight > 0:
+                    tar_pose = rc.matrix_to_axis_angle(tar_pose).reshape(bs*n, j*3)
+                    rec_pose = rc.matrix_to_axis_angle(rec_pose).reshape(bs*n, j*3)
+                    rec_pose = self.inverse_selection_tensor(rec_pose, self.train_data.joint_mask, rec_pose.shape[0])
+                    tar_pose = self.inverse_selection_tensor(tar_pose, self.train_data.joint_mask, tar_pose.shape[0])
+                    vertices_rec = self.smplx(
+                        betas=tar_beta.reshape(bs*n, 300), 
+                        transl=tar_trans.reshape(bs*n, 3), 
+                        expression=tar_exps.reshape(bs*n, 100), 
+                        jaw_pose=rec_pose[:, 66:69], 
+                        global_orient=rec_pose[:,:3], 
+                        body_pose=rec_pose[:,3:21*3+3], 
+                        left_hand_pose=rec_pose[:,25*3:40*3], 
+                        right_hand_pose=rec_pose[:,40*3:55*3], 
+                        return_verts=True, 
+                        leye_pose=tar_pose[:, 69:72], 
+                        reye_pose=tar_pose[:, 72:75],
+                    )
+                    vertices_tar = self.smplx(
+                        betas=tar_beta.reshape(bs*n, 300), 
+                        transl=tar_trans.reshape(bs*n, 3), 
+                        expression=tar_exps.reshape(bs*n, 100), 
+                        jaw_pose=tar_pose[:, 66:69], 
+                        global_orient=tar_pose[:,:3], 
+                        body_pose=tar_pose[:,3:21*3+3], 
+                        left_hand_pose=tar_pose[:,25*3:40*3], 
+                        right_hand_pose=tar_pose[:,40*3:55*3], 
+                        return_verts=True, 
+                        leye_pose=tar_pose[:, 69:72], 
+                        reye_pose=tar_pose[:, 72:75],
+                    )  
+                    vertices_loss = self.vectices_loss(vertices_rec['vertices'], vertices_tar['vertices'])
+                if "VQVAE" in self.args.g_name:
+                    loss_embedding = net_out["embedding_loss"]
+                scores[id] = {'rec':loss_rec.detach().cpu().numpy().item(),
+                              'ver':vertices_loss.detach().cpu().numpy().item(),
+                              'com':loss_embedding.detach().cpu().numpy().item()}
+        pickle.dump(scores,open('test_scores.pkl','wb'))
+
     def test(self, epoch):
         results_save_path = self.checkpoint_path + f"/{epoch}/"
         if os.path.exists(results_save_path): 
@@ -359,6 +426,7 @@ class CustomTrainer(train.BaseTrainer):
                     ############################################################
                     import trimesh
                     assert bs == 1
+                    max_seq_len = 30*30
                     # tar_pose,rec_pose = torch.from_numpy(tar_pose).cuda(),torch.from_numpy(rec_pose).cuda()
                     tar_pose = self.inverse_selection_tensor(tar_pose, self.test_data.joint_mask, tar_pose.shape[0])
                     rec_pose = self.inverse_selection_tensor(rec_pose, self.test_data.joint_mask, rec_pose.shape[0])
@@ -378,7 +446,7 @@ class CustomTrainer(train.BaseTrainer):
                     vertices = body.vertices.detach().cpu().numpy()
                     ply_d = 'meshes/' + test_seq_list.iloc[its]['id']
                     os.makedirs(ply_d,exist_ok=True)
-                    for i in trange(n,desc='writing rec meshes',leave=False):
+                    for i in trange(min(n,max_seq_len),desc='writing rec meshes',leave=False):
                         ply_f = f'{ply_d}/{i:05}.ply'
                         mesh = trimesh.Trimesh(vertices=vertices[i],
                                                faces=self.smplx.faces,
@@ -400,12 +468,14 @@ class CustomTrainer(train.BaseTrainer):
                     vertices = body.vertices.detach().cpu().numpy()
                     ply_d = 'meshes/' + test_seq_list.iloc[its]['id'] + '_gt'
                     os.makedirs(ply_d,exist_ok=True)
-                    for i in trange(n,desc='writing tar meshes',leave=False):
+                    for i in trange(min(n,max_seq_len),desc='writing tar meshes',leave=False):
                         ply_f = f'{ply_d}/{i:05}.ply'
                         mesh = trimesh.Trimesh(vertices=vertices[i],
                                                faces=self.smplx.faces,
                                                process=False)
                         mesh.export(ply_f)
+                    if its >= 8:
+                        break
                     ############################################################
                 else:
                     rec_pose = rc.axis_angle_to_matrix(torch.from_numpy(rec_pose.reshape(bs*n, j, 3)))

@@ -6,10 +6,10 @@ root_path: ./
 out_path: ./outputs/
 cache_path: datasets/cache/upper_amass30_beat2/
 project: emage
-wandb_run: upper_amass30_beat2_c256
+wandb_run: upper_amass30_beat2_c256_test
 data_path: ./emage_amass30_beat2/
 e_path:  weights/AESKConv_240_100.bin
-# test_ckpt: EMAGE/pretrained_vq/upper_vertex_1layer_710.bin
+test_ckpt: outputs/custom/0925_231136_cnn_vqvae_upper_30/epoch_0005_iter_12000.bin # EMAGE/pretrained_vq/upper_vertex_1layer_710.bin
 data_path_1: ./EMAGE/
 #torch_hub_path: datasets/hub/
 additional_data: False
