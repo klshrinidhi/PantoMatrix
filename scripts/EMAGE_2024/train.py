@@ -203,7 +203,7 @@ class BaseTrainer(object):
 
     def train_recording(self, epoch, its, t_data, t_train, mem_cost, lr_g, lr_d=None):
         pstr = "[%03d][%03d/%03d]  "%(epoch, its, self.train_length)
-        wandb.log({'epoch',epoch},
+        wandb.log({'epoch':epoch},
                   step=epoch*self.train_length+its)
         for name, states in self.tracker.loss_meters.items():
             metric = states['train']
@@ -304,7 +304,7 @@ def main_worker(rank, world_size, args):
             
 if __name__ == "__main__":
     os.environ["MASTER_ADDR"]='127.0.0.1'
-    os.environ["MASTER_PORT"]='8670'
+    os.environ["MASTER_PORT"]='8674'
     #os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
     args = config.parse_args()
     if args.ddp:

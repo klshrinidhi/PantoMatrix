@@ -45,7 +45,8 @@ class CustomTrainer(train.BaseTrainer):
             ext='npz',
             use_pca=False,
         ).cuda().eval()
-        self.tracker = other_tools.EpochTracker(["rec", "vel", "ver", "com", "kl", "acc"], [False, False, False, False, False, False])
+        self.tracker = other_tools.EpochTracker(["rec", "vel", "ver", "ver_vel", "ver_acc", "com", "kl", "acc", "loss"], 
+                                                [False, False, False, False, False, False, False, False, False])
         if not self.args.rot6d: #"rot6d" not in args.pose_rep:
             logger.error(f"this script is for rot6d, your pose rep. is {args.pose_rep}")
         self.rec_loss = get_loss_func("GeodesicLoss")
@@ -82,8 +83,8 @@ class CustomTrainer(train.BaseTrainer):
     def train(self, epoch):
         self.model.train()
         t_start = time.time()
-        self.tracker.reset()
         for its, dict_data in enumerate(tqdm(self.train_loader,desc=f'train epoch {epoch}')):
+            self.tracker.reset()
             tar_pose = dict_data["pose"]
             tar_beta = dict_data["beta"].cuda()
             tar_trans = dict_data["trans"].cuda()
@@ -151,6 +152,8 @@ class CustomTrainer(train.BaseTrainer):
 
                 vertices_vel_loss = self.vel_loss(vertices_rec['vertices'][:, 1:] - vertices_rec['vertices'][:, :-1], vertices_tar['vertices'][:, 1:] - vertices_tar['vertices'][:, :-1]) * self.args.rec_weight
                 vertices_acc_loss = self.vel_loss(vertices_rec['vertices'][:, 2:] + vertices_rec['vertices'][:, :-2] - 2 * vertices_rec['vertices'][:, 1:-1], vertices_tar['vertices'][:, 2:] + vertices_tar['vertices'][:, :-2] - 2 * vertices_tar['vertices'][:, 1:-1]) * self.args.rec_weight
+                self.tracker.update_meter("ver_vel", "train", vertices_vel_loss.item()*self.args.rec_weight * self.args.rec_ver_weight)
+                self.tracker.update_meter("ver_acc", "train", vertices_acc_loss.item()*self.args.rec_weight * self.args.rec_ver_weight)
                 g_loss_final += vertices_vel_loss * self.args.rec_weight * self.args.rec_ver_weight
                 g_loss_final += vertices_acc_loss * self.args.rec_weight * self.args.rec_ver_weight 
             
@@ -179,7 +182,8 @@ class CustomTrainer(train.BaseTrainer):
             #     else:
             #         KLD_weight = min(1.0, (epoch - 0) * 0.05) * 0.01
             #     loss += KLD_weight * KLD
-            #     self.tracker.update_meter("kl", "train", KLD_weight * KLD.item())    
+            #     self.tracker.update_meter("kl", "train", KLD_weight * KLD.item())
+            self.tracker.update_meter("loss", "train", g_loss_final.item())
             g_loss_final.backward()
             if self.args.grad_norm != 0: 
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.grad_norm)
@@ -190,7 +194,9 @@ class CustomTrainer(train.BaseTrainer):
             lr_g = self.opt.param_groups[0]['lr']
             if its % self.args.log_period == 0:
                 self.train_recording(epoch, its, t_data, t_train, mem_cost, lr_g)   
-            if its % 600 == 0:
+            
+            # Save checkpoint and run val 4 times per training epoch.
+            if its % (len(self.train_loader)/3) < 1:
                 other_tools.save_checkpoints(os.path.join(self.checkpoint_path, 
                                                           f"epoch_{epoch:04}_iter_{its:05}.bin"), 
                                                           self.model, 
@@ -199,6 +205,7 @@ class CustomTrainer(train.BaseTrainer):
                                                           lrs=None)
                 self.val(epoch,its)
                 self.model.train()
+
             if self.args.debug:
                 if its == 1: break
         self.opt_s.step(epoch)
@@ -218,8 +225,7 @@ class CustomTrainer(train.BaseTrainer):
                 tar_pose = rc.matrix_to_rotation_6d(tar_pose).reshape(bs, n, j*6)
                 t_data = time.time() - t_start 
 
-                #self.opt.zero_grad()
-                #g_loss_final = 0
+                g_loss_final = 0
                 net_out = self.model(tar_pose)
                 rec_pose = net_out["rec_pose"]
                 rec_pose = rec_pose.reshape(bs, n, j, 6)
@@ -227,7 +233,14 @@ class CustomTrainer(train.BaseTrainer):
                 tar_pose = rc.rotation_6d_to_matrix(tar_pose.reshape(bs, n, j, 6))
                 loss_rec = self.rec_loss(rec_pose, tar_pose) * self.args.rec_weight * self.args.rec_pos_weight
                 self.tracker.update_meter("rec", "val", loss_rec.item())
-                #g_loss_final += loss_rec
+                g_loss_final += loss_rec
+
+                velocity_loss =  self.vel_loss(rec_pose[:, 1:] - rec_pose[:, :-1], tar_pose[:, 1:] - tar_pose[:, :-1]) * self.args.rec_weight
+                acceleration_loss =  self.vel_loss(rec_pose[:, 2:] + rec_pose[:, :-2] - 2 * rec_pose[:, 1:-1], tar_pose[:, 2:] + tar_pose[:, :-2] - 2 * tar_pose[:, 1:-1]) * self.args.rec_weight
+                self.tracker.update_meter("vel", "val", velocity_loss.item())
+                self.tracker.update_meter("acc", "val", acceleration_loss.item())
+                g_loss_final += velocity_loss 
+                g_loss_final += acceleration_loss 
 
                  # vertices loss
                 if self.args.rec_ver_weight > 0:
@@ -263,10 +276,21 @@ class CustomTrainer(train.BaseTrainer):
                     )  
                     vectices_loss = self.vectices_loss(vertices_rec['vertices'], vertices_tar['vertices'])
                     self.tracker.update_meter("ver", "val", vectices_loss.item()*self.args.rec_weight * self.args.rec_ver_weight)
+                    g_loss_final += vectices_loss*self.args.rec_weight*self.args.rec_ver_weight
+
+                    vertices_vel_loss = self.vel_loss(vertices_rec['vertices'][:, 1:] - vertices_rec['vertices'][:, :-1], vertices_tar['vertices'][:, 1:] - vertices_tar['vertices'][:, :-1]) * self.args.rec_weight
+                    vertices_acc_loss = self.vel_loss(vertices_rec['vertices'][:, 2:] + vertices_rec['vertices'][:, :-2] - 2 * vertices_rec['vertices'][:, 1:-1], vertices_tar['vertices'][:, 2:] + vertices_tar['vertices'][:, :-2] - 2 * vertices_tar['vertices'][:, 1:-1]) * self.args.rec_weight
+                    self.tracker.update_meter("ver_vel", "val", vertices_vel_loss.item()*self.args.rec_weight * self.args.rec_ver_weight)
+                    self.tracker.update_meter("ver_acc", "val", vertices_acc_loss.item()*self.args.rec_weight * self.args.rec_ver_weight)
+                    g_loss_final += vertices_vel_loss * self.args.rec_weight * self.args.rec_ver_weight
+                    g_loss_final += vertices_acc_loss * self.args.rec_weight * self.args.rec_ver_weight 
+
                 if "VQVAE" in self.args.g_name:
                     loss_embedding = net_out["embedding_loss"]
+                    g_loss_final += loss_embedding
                     self.tracker.update_meter("com", "val", loss_embedding.item())
-                    #g_loss_final += vectices_loss*self.args.rec_weight*self.args.rec_ver_weight
+
+                self.tracker.update_meter("loss", "val", g_loss_final.item())
             self.val_recording(epoch,train_its)
 
     def test_scores(self):
