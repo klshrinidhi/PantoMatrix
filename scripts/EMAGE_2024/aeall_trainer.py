@@ -68,90 +68,98 @@ class CustomTrainer(train.BaseTrainer):
             tar_exps = dict_data["facial"].to(self.rank)
             tar_pose = rc.axis_angle_to_matrix(tar_pose.reshape(bs, n, j, 3))
             tar_pose = rc.matrix_to_rotation_6d(tar_pose).reshape(bs, n, j*6)
-            in_tar_pose = torch.cat([tar_pose, tar_exps], -1) # 103
+            in_tar_pose = torch.cat([tar_trans, tar_pose, tar_exps], -1)
             t_data = time.time() - t_start 
             
             self.opt.zero_grad()
             g_loss_final = 0
             net_out = self.model(in_tar_pose)
-            
+            rec_trans = net_out["rec_pose"][:, :, :3] 
             # jaw open 6d loss
-            rec_pose = net_out["rec_pose"][:, :, :j*6]
+            rec_pose = net_out["rec_pose"][:, :, 3:3+j*6]
             rec_pose = rec_pose.reshape(bs, n, j, 6)
             rec_pose = rc.rotation_6d_to_matrix(rec_pose)#
             tar_pose = rc.rotation_6d_to_matrix(tar_pose.reshape(bs, n, j, 6))
-            loss_rec = self.rec_loss(rec_pose, tar_pose)
+            loss_rec = self.rec_loss(rec_pose, tar_pose) * self.args.rec_weight * self.args.rec_pos_weight
             self.tracker.update_meter("rec", "train", loss_rec.item())
-            g_loss_final += loss_rec * self.args.rec_weight
-
+            g_loss_final += loss_rec
             # jaw open 6d vel and acc loss
-            velocity_loss =  self.vel_loss(rec_pose[:, 1:] - rec_pose[:, :-1], tar_pose[:, 1:] - tar_pose[:, :-1])
-            acceleration_loss =  self.vel_loss(rec_pose[:, 2:] + rec_pose[:, :-2] - 2 * rec_pose[:, 1:-1], tar_pose[:, 2:] + tar_pose[:, :-2] - 2 * tar_pose[:, 1:-1])
+            velocity_loss =  self.vel_loss(rec_pose[:, 1:] - rec_pose[:, :-1], tar_pose[:, 1:] - tar_pose[:, :-1]) * self.args.rec_vel_weight
+            acceleration_loss =  self.vel_loss(rec_pose[:, 2:] + rec_pose[:, :-2] - 2 * rec_pose[:, 1:-1], tar_pose[:, 2:] + tar_pose[:, :-2] - 2 * tar_pose[:, 1:-1]) * self.args.rec_acc_weight
             self.tracker.update_meter("vel", "train", velocity_loss.item())
             self.tracker.update_meter("acc", "train", acceleration_loss.item())
-            g_loss_final += velocity_loss * self.args.rec_vel_weight
-            g_loss_final += acceleration_loss * self.args.rec_acc_weight
-
+            g_loss_final += velocity_loss 
+            g_loss_final += acceleration_loss 
             # face parameter l1 loss
-            rec_exps = net_out["rec_pose"][:, :, j*6:]
-            loss_face = self.mse_loss(rec_exps, tar_exps)
+            rec_exps = net_out["rec_pose"][:, :, 3+j*6:]
+            loss_face = self.mse_loss(rec_exps, tar_exps) * self.args.rec_weight
             self.tracker.update_meter("face", "train", loss_face.item())
-            g_loss_final += loss_face * self.args.face_weight
-            
+            g_loss_final += loss_face
             # face parameter l1 vel and acc loss
-            face_velocity_loss =  self.vel_loss(rec_exps[:, 1:] - rec_exps[:, :-1], tar_exps[:, 1:] - tar_exps[:, :-1])
-            face_acceleration_loss =  self.vel_loss(rec_exps[:, 2:] + rec_exps[:, :-2] - 2 * rec_exps[:, 1:-1], tar_exps[:, 2:] + tar_exps[:, :-2] - 2 * tar_exps[:, 1:-1])
+            face_velocity_loss =  self.vel_loss(rec_exps[:, 1:] - rec_exps[:, :-1], tar_exps[:, 1:] - tar_exps[:, :-1]) * self.args.rec_vel_weight
+            face_acceleration_loss =  self.vel_loss(rec_exps[:, 2:] + rec_exps[:, :-2] - 2 * rec_exps[:, 1:-1], tar_exps[:, 2:] + tar_exps[:, :-2] - 2 * tar_exps[:, 1:-1]) * self.args.rec_acc_weight
             self.tracker.update_meter("face_vel", "train", face_velocity_loss.item())
             self.tracker.update_meter("face_acc", "train", face_acceleration_loss.item())
-            g_loss_final += face_velocity_loss * self.args.face_vel_weight
-            g_loss_final += face_acceleration_loss * self.args.face_acc_weight
+            g_loss_final += face_velocity_loss
+            g_loss_final += face_acceleration_loss
 
              # vertices loss
-            tar_pose = rc.matrix_to_axis_angle(tar_pose).reshape(bs*n, j*3)
-            rec_pose = rc.matrix_to_axis_angle(rec_pose).reshape(bs*n, j*3)
-            vertices_rec = self.smplx(
-                betas=tar_beta.reshape(bs*n, 300), 
-                transl=tar_trans.reshape(bs*n, 3)-tar_trans.reshape(bs*n, 3), 
-                expression=tar_exps.reshape(bs*n, 100), 
-                jaw_pose=rec_pose, 
-                global_orient=torch.zeros(bs*n, 3).cuda(), 
-                body_pose=torch.zeros(bs*n, 21*3).cuda(), 
-                left_hand_pose=torch.zeros(bs*n, 15*3).cuda(), 
-                right_hand_pose=torch.zeros(bs*n, 15*3).cuda(), 
-                return_verts=True,
-                # return_joints=True,
-                leye_pose=torch.zeros(bs*n, 3).cuda(), 
-                reye_pose=torch.zeros(bs*n, 3).cuda(),
-            )
-            vertices_tar = self.smplx(
-                betas=tar_beta.reshape(bs*n, 300), 
-                transl=tar_trans.reshape(bs*n, 3)-tar_trans.reshape(bs*n, 3), 
-                expression=rec_exps.reshape(bs*n, 100), 
-                jaw_pose=tar_pose, 
-                global_orient=torch.zeros(bs*n, 3).cuda(), 
-                body_pose=torch.zeros(bs*n, 21*3).cuda(), 
-                left_hand_pose=torch.zeros(bs*n, 15*3).cuda(), 
-                right_hand_pose=torch.zeros(bs*n, 15*3).cuda(), 
-                return_verts=True,
-                # return_joints=True,
-                leye_pose=torch.zeros(bs*n, 3).cuda(), 
-                reye_pose=torch.zeros(bs*n, 3).cuda(),
-            )  
-            vectices_loss = self.mse_loss(vertices_rec['vertices'], vertices_tar['vertices'])
-            self.tracker.update_meter("ver", "train", vectices_loss.item())
-            g_loss_final += vectices_loss * self.args.rec_ver_weight
-
-            vert_vel_loss =  self.vel_loss(vertices_rec['vertices'][:, 1:] - vertices_rec['vertices'][:, :-1], vertices_tar['vertices'][:, 1:] - vertices_tar['vertices'][:, :-1])
-            vert_acc_loss =  self.vel_loss(vertices_rec['vertices'][:, 2:] + vertices_rec['vertices'][:, :-2] - 2 * vertices_rec['vertices'][:, 1:-1], vertices_tar['vertices'][:, 2:] + vertices_tar['vertices'][:, :-2] - 2 * vertices_tar['vertices'][:, 1:-1])
-            self.tracker.update_meter("ver_vel", "train", vert_vel_loss.item())
-            self.tracker.update_meter("ver_acc", "train", vert_acc_loss.item())
-            g_loss_final += vert_vel_loss * self.args.ver_vel_weight
-            g_loss_final += vert_acc_loss * self.args.ver_acc_weight
+            if self.args.rec_ver_weight > 0:
+                tar_pose = rc.matrix_to_axis_angle(tar_pose).reshape(bs*n, j*3)
+                rec_pose = rc.matrix_to_axis_angle(rec_pose).reshape(bs*n, j*3)
+                vertices_rec = self.smplx(
+                    betas           = tar_beta.reshape(bs*n,300),
+                    transl          = rec_trans.reshape(bs*n,3),
+                    expression      = rec_exps.reshape(bs*n,100),
+                    jaw_pose        = rec_pose[:,66:69],
+                    global_orient   = rec_pose[:,:3],
+                    body_pose       = rec_pose[:,3:21*3+3],
+                    left_hand_pose  = rec_pose[:,25*3:40*3],
+                    right_hand_pose = rec_pose[:,40*3:55*3],
+                    return_verts    = True,
+                    return_joints   = True,
+                    leye_pose       = rec_pose[:,69:72],
+                    reye_pose       = rec_pose[:,72:75],
+                )
+                vertices_tar = self.smplx(
+                    betas           = tar_beta.reshape(bs*n,300),
+                    transl          = tar_trans.reshape(bs*n,3),
+                    expression      = tar_exps.reshape(bs*n,100),
+                    jaw_pose        = tar_pose[:,66:69],
+                    global_orient   = tar_pose[:,:3],
+                    body_pose       = tar_pose[:,3:21*3+3],
+                    left_hand_pose  = tar_pose[:,25*3:40*3],
+                    right_hand_pose = tar_pose[:,40*3:55*3],
+                    return_verts    = True,
+                    return_joints   = True,
+                    leye_pose       = tar_pose[:,69:72],
+                    reye_pose       = tar_pose[:,72:75],
+                )  
+                vectices_loss = self.mse_loss(vertices_rec['vertices'], vertices_tar['vertices'])
+                self.tracker.update_meter("ver", "train", vectices_loss.item()*self.args.rec_weight * self.args.rec_ver_weight)
+                g_loss_final += vectices_loss*self.args.rec_weight*self.args.rec_ver_weight
+                # vertices vel and acc loss
+                vert_vel_loss =  self.vel_loss(vertices_rec['vertices'][:, 1:] - vertices_rec['vertices'][:, :-1], vertices_tar['vertices'][:, 1:] - vertices_tar['vertices'][:, :-1]) * self.args.rec_weight * self.args.rec_ver_weight
+                vert_acc_loss =  self.vel_loss(vertices_rec['vertices'][:, 2:] + vertices_rec['vertices'][:, :-2] - 2 * vertices_rec['vertices'][:, 1:-1], vertices_tar['vertices'][:, 2:] + vertices_tar['vertices'][:, :-2] - 2 * vertices_tar['vertices'][:, 1:-1]) * self.args.rec_weight * self.args.rec_ver_weight
+                self.tracker.update_meter("ver_vel", "train", vert_vel_loss.item())
+                self.tracker.update_meter("ver_acc", "train", vert_acc_loss.item())
+                g_loss_final += vert_vel_loss
+                g_loss_final += vert_acc_loss
             
-            loss_embedding = net_out["embedding_loss"] 
-            self.tracker.update_meter("com", "train", loss_embedding.item())
-            g_loss_final += loss_embedding * self.args.comm_weight
-
+            # ---------------------- vae -------------------------- #
+            if "VQVAE" in self.args.g_name:
+                loss_embedding = net_out["embedding_loss"] * self.args.comm_weight
+                g_loss_final += loss_embedding
+                self.tracker.update_meter("com", "train", loss_embedding.item())
+            # elif "VAE" in self.args.g_name:
+            #     pose_mu, pose_logvar = net_out["pose_mu"], net_out["pose_logvar"] 
+            #     KLD = -0.5 * torch.sum(1 + pose_logvar - pose_mu.pow(2) - pose_logvar.exp())
+            #     if epoch < 0:
+            #         KLD_weight = 0
+            #     else:
+            #         KLD_weight = min(1.0, (epoch - 0) * 0.05) * 0.01
+            #     loss += KLD_weight * KLD
+            #     self.tracker.update_meter("kl", "train", KLD_weight * KLD.item())    
             self.tracker.update_meter("loss", "train", g_loss_final.item())
             g_loss_final.backward()
             if self.args.grad_norm != 0: 
@@ -192,89 +200,86 @@ class CustomTrainer(train.BaseTrainer):
                 tar_exps = dict_data["facial"].to(self.rank)
                 tar_pose = rc.axis_angle_to_matrix(tar_pose.reshape(bs, n, j, 3))
                 tar_pose = rc.matrix_to_rotation_6d(tar_pose).reshape(bs, n, j*6)
-                in_tar_pose = torch.cat([tar_pose, tar_exps], -1) # 103
+                in_tar_pose = torch.cat([tar_trans, tar_pose, tar_exps], -1)
                 t_data = time.time() - t_start 
 
                 g_loss_final = 0
                 net_out = self.model(in_tar_pose)
+                rec_trans = net_out["rec_pose"][:, :, :3] 
                 # jaw open 6d loss
-                rec_pose = net_out["rec_pose"][:, :, :j*6]
+                rec_pose = net_out["rec_pose"][:, :, 3:3+j*6]
                 rec_pose = rec_pose.reshape(bs, n, j, 6)
                 rec_pose = rc.rotation_6d_to_matrix(rec_pose)#
                 tar_pose = rc.rotation_6d_to_matrix(tar_pose.reshape(bs, n, j, 6))
-                loss_rec = self.rec_loss(rec_pose, tar_pose)
+                loss_rec = self.rec_loss(rec_pose, tar_pose) * self.args.rec_weight * self.args.rec_pos_weight
                 self.tracker.update_meter("rec", "val", loss_rec.item())
-                g_loss_final += loss_rec * self.args.rec_weight
-
+                g_loss_final += loss_rec
                 # jaw open 6d vel and acc loss
-                velocity_loss =  self.vel_loss(rec_pose[:, 1:] - rec_pose[:, :-1], tar_pose[:, 1:] - tar_pose[:, :-1])
-                acceleration_loss =  self.vel_loss(rec_pose[:, 2:] + rec_pose[:, :-2] - 2 * rec_pose[:, 1:-1], tar_pose[:, 2:] + tar_pose[:, :-2] - 2 * tar_pose[:, 1:-1])
+                velocity_loss =  self.vel_loss(rec_pose[:, 1:] - rec_pose[:, :-1], tar_pose[:, 1:] - tar_pose[:, :-1]) * self.args.rec_weight
+                acceleration_loss =  self.vel_loss(rec_pose[:, 2:] + rec_pose[:, :-2] - 2 * rec_pose[:, 1:-1], tar_pose[:, 2:] + tar_pose[:, :-2] - 2 * tar_pose[:, 1:-1]) * self.args.rec_weight
                 self.tracker.update_meter("vel", "val", velocity_loss.item())
                 self.tracker.update_meter("acc", "val", acceleration_loss.item())
-                g_loss_final += velocity_loss * self.args.rec_vel_weight
-                g_loss_final += acceleration_loss * self.args.rec_acc_weight
-
+                g_loss_final += velocity_loss 
+                g_loss_final += acceleration_loss 
                 # face parameter l1 loss
-                rec_exps = net_out["rec_pose"][:, :, j*6:]
-                loss_face = self.vel_loss(rec_exps, tar_exps)
+                rec_exps = net_out["rec_pose"][:, :, 3+j*6:]
+                loss_face = self.vel_loss(rec_exps, tar_exps) * self.args.rec_weight
                 self.tracker.update_meter("face", "val", loss_face.item())
-                g_loss_final += loss_face * self.args.face_weight
-
+                g_loss_final += loss_face
                 # face parameter l1 vel and acc loss
-                face_vel_loss =  self.vel_loss(rec_exps[:, 1:] - rec_exps[:, :-1], tar_exps[:, 1:] - tar_exps[:, :-1])
-                face_acc_loss =  self.vel_loss(rec_exps[:, 2:] + rec_exps[:, :-2] - 2 * rec_exps[:, 1:-1], tar_exps[:, 2:] + tar_exps[:, :-2] - 2 * tar_exps[:, 1:-1])
+                face_vel_loss =  self.vel_loss(rec_exps[:, 1:] - rec_exps[:, :-1], tar_exps[:, 1:] - tar_exps[:, :-1]) * self.args.rec_weight
+                face_acc_loss =  self.vel_loss(rec_exps[:, 2:] + rec_exps[:, :-2] - 2 * rec_exps[:, 1:-1], tar_exps[:, 2:] + tar_exps[:, :-2] - 2 * tar_exps[:, 1:-1]) * self.args.rec_weight
                 self.tracker.update_meter("face_vel", "val", face_vel_loss.item())
                 self.tracker.update_meter("face_acc", "val", face_acc_loss.item())
-                g_loss_final += face_vel_loss * self.args.face_vel_weight
-                g_loss_final += face_acc_loss * self.args.face_acc_weight
+                g_loss_final += face_vel_loss
+                g_loss_final += face_acc_loss
 
                 # vertices loss
-                tar_pose = rc.matrix_to_axis_angle(tar_pose).reshape(bs*n, j*3)
-                rec_pose = rc.matrix_to_axis_angle(rec_pose).reshape(bs*n, j*3)
-                vertices_rec = self.smplx(
-                    betas=tar_beta.reshape(bs*n, 300), 
-                    transl=tar_trans.reshape(bs*n, 3)-tar_trans.reshape(bs*n, 3), 
-                    expression=tar_exps.reshape(bs*n, 100), 
-                    jaw_pose=rec_pose, 
-                    global_orient=torch.zeros(bs*n, 3).cuda(), 
-                    body_pose=torch.zeros(bs*n, 21*3).cuda(), 
-                    left_hand_pose=torch.zeros(bs*n, 15*3).cuda(), 
-                    right_hand_pose=torch.zeros(bs*n, 15*3).cuda(), 
-                    return_verts=True,
-                    # return_joints=True,
-                    leye_pose=torch.zeros(bs*n, 3).cuda(), 
-                    reye_pose=torch.zeros(bs*n, 3).cuda(),
-                )
-                vertices_tar = self.smplx(
-                    betas=tar_beta.reshape(bs*n, 300), 
-                    transl=tar_trans.reshape(bs*n, 3)-tar_trans.reshape(bs*n, 3), 
-                    expression=rec_exps.reshape(bs*n, 100), 
-                    jaw_pose=tar_pose, 
-                    global_orient=torch.zeros(bs*n, 3).cuda(), 
-                    body_pose=torch.zeros(bs*n, 21*3).cuda(), 
-                    left_hand_pose=torch.zeros(bs*n, 15*3).cuda(), 
-                    right_hand_pose=torch.zeros(bs*n, 15*3).cuda(), 
-                    return_verts=True,
-                    # return_joints=True,
-                    leye_pose=torch.zeros(bs*n, 3).cuda(), 
-                    reye_pose=torch.zeros(bs*n, 3).cuda(),
-                )  
-                vectices_loss = self.mse_loss(vertices_rec['vertices'], vertices_tar['vertices'])
-                self.tracker.update_meter("ver", "val", vectices_loss.item())
-                g_loss_final += vectices_loss * self.args.rec_ver_weight
-
-                # vertices vel and acc loss
-                vert_vel_loss =  self.vel_loss(vertices_rec['vertices'][:, 1:] - vertices_rec['vertices'][:, :-1], vertices_tar['vertices'][:, 1:] - vertices_tar['vertices'][:, :-1])
-                vert_acc_loss =  self.vel_loss(vertices_rec['vertices'][:, 2:] + vertices_rec['vertices'][:, :-2] - 2 * vertices_rec['vertices'][:, 1:-1], vertices_tar['vertices'][:, 2:] + vertices_tar['vertices'][:, :-2] - 2 * vertices_tar['vertices'][:, 1:-1])
-                self.tracker.update_meter("ver_vel", "val", vert_vel_loss.item())
-                self.tracker.update_meter("ver_acc", "val", vert_acc_loss.item())
-                g_loss_final += vert_vel_loss * self.args.rec_ver_vel_weight
-                g_loss_final += vert_acc_loss * self.args.rec_ver_acc_weight
-
-                loss_embedding = net_out["embedding_loss"]
-                self.tracker.update_meter("com", "val", loss_embedding.item())
-                g_loss_final += loss_embedding * self.args.comm_weight
-                
+                if self.args.rec_ver_weight > 0:
+                    tar_pose = rc.matrix_to_axis_angle(tar_pose).reshape(bs*n, j*3)
+                    rec_pose = rc.matrix_to_axis_angle(rec_pose).reshape(bs*n, j*3)
+                    vertices_rec = self.smplx(
+                        betas           = tar_beta.reshape(bs*n,300),
+                        transl          = rec_trans.reshape(bs*n,3),
+                        expression      = rec_exps.reshape(bs*n,100),
+                        jaw_pose        = rec_pose[:,66:69],
+                        global_orient   = rec_pose[:,:3],
+                        body_pose       = rec_pose[:,3:21*3+3],
+                        left_hand_pose  = rec_pose[:,25*3:40*3],
+                        right_hand_pose = rec_pose[:,40*3:55*3],
+                        return_verts    = True,
+                        return_joints   = True,
+                        leye_pose       = rec_pose[:,69:72],
+                        reye_pose       = rec_pose[:,72:75],
+                    )
+                    vertices_tar = self.smplx(
+                        betas           = tar_beta.reshape(bs*n,300),
+                        transl          = tar_trans.reshape(bs*n,3),
+                        expression      = tar_exps.reshape(bs*n,100),
+                        jaw_pose        = tar_pose[:,66:69],
+                        global_orient   = tar_pose[:,:3],
+                        body_pose       = tar_pose[:,3:21*3+3],
+                        left_hand_pose  = tar_pose[:,25*3:40*3],
+                        right_hand_pose = tar_pose[:,40*3:55*3],
+                        return_verts    = True,
+                        return_joints   = True,
+                        leye_pose       = tar_pose[:,69:72],
+                        reye_pose       = tar_pose[:,72:75],
+                    )  
+                    vectices_loss = self.mse_loss(vertices_rec['vertices'], vertices_tar['vertices'])
+                    self.tracker.update_meter("ver", "val", vectices_loss.item()*self.args.rec_weight * self.args.rec_ver_weight)
+                    g_loss_final += vectices_loss*self.args.rec_weight*self.args.rec_ver_weight
+                    # vertices vel and acc loss
+                    vert_vel_loss =  self.vel_loss(vertices_rec['vertices'][:, 1:] - vertices_rec['vertices'][:, :-1], vertices_tar['vertices'][:, 1:] - vertices_tar['vertices'][:, :-1]) * self.args.rec_weight * self.args.rec_ver_weight
+                    vert_acc_loss =  self.vel_loss(vertices_rec['vertices'][:, 2:] + vertices_rec['vertices'][:, :-2] - 2 * vertices_rec['vertices'][:, 1:-1], vertices_tar['vertices'][:, 2:] + vertices_tar['vertices'][:, :-2] - 2 * vertices_tar['vertices'][:, 1:-1]) * self.args.rec_weight * self.args.rec_ver_weight
+                    self.tracker.update_meter("ver_vel", "val", vert_vel_loss.item())
+                    self.tracker.update_meter("ver_acc", "val", vert_acc_loss.item())
+                    g_loss_final += vert_vel_loss
+                    g_loss_final += vert_acc_loss
+                if "VQVAE" in self.args.g_name:
+                    loss_embedding = net_out["embedding_loss"] * self.args.comm_weight
+                    g_loss_final += loss_embedding
+                    self.tracker.update_meter("com", "val", loss_embedding.item())
                 self.tracker.update_meter("loss", "val", g_loss_final.item())
         self.val_recording(epoch,train_its)
             
@@ -297,29 +302,29 @@ class CustomTrainer(train.BaseTrainer):
                 else:
                     continue
 
-                tar_pose = dict_data["pose"][:,:max_seq_len]
-                tar_pose = tar_pose.cuda()
+                tar_pose = dict_data["pose"][:,:max_seq_len].cuda()
+                tar_trans = dict_data["trans"][:,:max_seq_len].cuda()
                 tar_exps = dict_data["facial"][:,:max_seq_len].cuda()
                 bs, n, j = tar_pose.shape[0], tar_pose.shape[1], self.joints
                 tar_pose = rc.axis_angle_to_matrix(tar_pose.reshape(bs, n, j, 3))
                 tar_pose = rc.matrix_to_rotation_6d(tar_pose).reshape(bs, n, j*6)
-                in_tar_pose = torch.cat([tar_pose, tar_exps], -1)
+                in_tar_pose = torch.cat([tar_trans, tar_pose, tar_exps], -1)
                 ################################################################
                 gt_npz = np.load(self.args.data_path+self.args.pose_rep+"/"+test_seq_list.iloc[its]['id']+'.npz', allow_pickle=True)
                 assert dict_data['pose'].shape[1] <= gt_npz['poses'].shape[0]
                 tar_beta = torch.from_numpy(np.repeat(gt_npz['betas'].reshape(1,300),n,0)).cuda()
-                tar_trans = torch.from_numpy(gt_npz['trans'][:n].astype(np.float32)).cuda() * 0
                 ################################################################
 
                 net_out = self.model(in_tar_pose)
-                rec_pose = net_out["rec_pose"][:, :, :j*6]
+                rec_trans = net_out["rec_pose"][:, :, :3] 
+                rec_pose = net_out["rec_pose"][:, :, 3:3+j*6]
                 n = rec_pose.shape[1]
                 tar_pose = tar_pose[:, :n, :]
                 rec_pose = rec_pose.reshape(bs, n, j, 6) 
                 rec_pose = rc.rotation_6d_to_matrix(rec_pose)#
                 rec_pose = rc.matrix_to_axis_angle(rec_pose).reshape(bs*n, j*3)
 
-                rec_exps = net_out["rec_pose"][:, :, j*6:]
+                rec_exps = net_out["rec_pose"][:, :, 3+j*6:]
                             
                 tar_pose = rc.rotation_6d_to_matrix(tar_pose.reshape(bs, n, j, 6))
                 tar_pose = rc.matrix_to_axis_angle(tar_pose).reshape(bs*n, j*3)
@@ -328,28 +333,10 @@ class CustomTrainer(train.BaseTrainer):
 
                 import trimesh
                 assert bs == 1
-                tar_pose = self.inverse_selection_tensor(tar_pose, self.test_data.joint_mask, tar_pose.shape[0])
-                rec_pose = self.inverse_selection_tensor(rec_pose, self.test_data.joint_mask, rec_pose.shape[0])
-                pkl_f = 'meshes/' + test_seq_list.iloc[its]['id'] + '.pkl'
-                os.makedirs('meshes',exist_ok=True)
-                if not os.path.exists(pkl_f):
-                    pickle.dump({'tar_beta':tar_beta.detach().cpu().numpy(),
-                                 'tar_trans':tar_trans.detach().cpu().numpy(),
-                                 'tar_exps':tar_exps.detach().cpu().numpy(),
-                                 'tar_pose':tar_pose.detach().cpu().numpy(),
-                                 'rec_pose':rec_pose.detach().cpu().numpy()},
-                                open(pkl_f,'wb'))
-                else:
-                    pkl = pickle.load(open(pkl_f,'rb'))
-                    inds = np.where(self.test_data.joint_mask == 1)[0]
-                    pkl['rec_pose'][:,inds] = rec_pose[:,inds].detach().cpu().numpy()
-                    pkl['tar_pose'][:,inds] = tar_pose[:,inds].detach().cpu().numpy()
-                    pickle.dump(pkl,open(pkl_f,'wb'))
-                    rec_pose = torch.from_numpy(pkl['rec_pose']).cuda()
-                    tar_pose = torch.from_numpy(pkl['tar_pose']).cuda()
+                assert self.test_data.joint_mask.sum() == 165
                 body = self.smplx(
                     betas=tar_beta.reshape(bs*n, 300), 
-                    transl=tar_trans.reshape(bs*n, 3),
+                    transl=rec_trans.reshape(bs*n, 3)*0,
                     expression=rec_exps.reshape(bs*n, 100), 
                     jaw_pose=rec_pose[:, 66:69], 
                     global_orient=rec_pose[:,:3], 

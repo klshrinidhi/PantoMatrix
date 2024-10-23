@@ -83,11 +83,11 @@ class BaseTrainer(object):
         else: 
             self.model = torch.nn.DataParallel(getattr(model_module, args.g_name)(args), args.gpus).cuda()
         
-        if self.rank == 0:
-            logger.info(self.model)
-            logger.info(f"init {args.g_name} success")
-            if args.stat == "wandb":
-                wandb.watch(self.model)
+        # if self.rank == 0:
+        #     logger.info(self.model)
+        #     logger.info(f"init {args.g_name} success")
+        #     if args.stat == "wandb":
+        #         wandb.watch(self.model)
         
         # if args.d_name is not None:
         #     if args.ddp:
@@ -191,14 +191,13 @@ class BaseTrainer(object):
 
 @logger.catch
 def main_worker(rank, world_size, args):
-    #os.environ['TRANSFORMERS_CACHE'] = args.data_path_1 + "hub/"
     if not sys.warnoptions:
         warnings.simplefilter("ignore")
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         
     logger_tools.set_args_and_logger(args, rank)
     other_tools.set_random_seed(args)
-    other_tools.print_exp_info(args)
+    # other_tools.print_exp_info(args)
       
     # return one intance of trainer
     trainer = __import__(f"{args.trainer}_trainer", fromlist=["something"]).CustomTrainer(args) if args.trainer != "base" else BaseTrainer(args) 
@@ -210,7 +209,7 @@ def main_worker(rank, world_size, args):
             
 if __name__ == "__main__":
     os.environ["MASTER_ADDR"]='127.0.0.1'
-    os.environ["MASTER_PORT"]='8675'
+    os.environ["MASTER_PORT"]='8674'
     #os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
     args = config.parse_args()
     if args.ddp:

@@ -62,7 +62,8 @@ class CustomDataset(Dataset):
         ).cuda().eval()
 
         split_rule = pd.read_csv(args.data_path+"train_test_split.csv")
-        self.selected_file = split_rule.loc[(split_rule['type'] == loader_type) & (split_rule['id'].str.split("_").str[0].astype(int).isin(self.args.training_speakers))]
+        # self.selected_file = split_rule.loc[(split_rule['type'] == loader_type) & (split_rule['id'].str.split("_").str[0].astype(int).isin(self.args.training_speakers))]
+        self.selected_file = split_rule.loc[(split_rule['type'] == loader_type)]
         if args.additional_data and loader_type == 'train':
             split_b = split_rule.loc[(split_rule['type'] == 'additional') & (split_rule['id'].str.split("_").str[0].astype(int).isin(self.args.training_speakers))]
             #self.selected_file = split_rule.loc[(split_rule['type'] == 'additional') & (split_rule['id'].str.split("_").str[0].astype(int).isin(self.args.training_speakers))]

@@ -85,11 +85,11 @@ class BaseTrainer(object):
         else: 
             self.model = torch.nn.DataParallel(getattr(model_module, args.g_name)(args), args.gpus).cuda()
         
-        if self.rank == 0:
-            logger.info(self.model)
-            logger.info(f"init {args.g_name} success")
-            if args.stat == "wandb":
-                wandb.watch(self.model)
+        # if self.rank == 0:
+        #     logger.info(self.model)
+        #     logger.info(f"init {args.g_name} success")
+        #     if args.stat == "wandb":
+        #         wandb.watch(self.model)
         
         if args.d_name is not None:
             if args.ddp:
@@ -255,47 +255,30 @@ class BaseTrainer(object):
 
 @logger.catch
 def main_worker(rank, world_size, args):
-    #os.environ['TRANSFORMERS_CACHE'] = args.data_path_1 + "hub/"
     if not sys.warnoptions:
         warnings.simplefilter("ignore")
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
         
     logger_tools.set_args_and_logger(args, rank)
     other_tools.set_random_seed(args)
-    other_tools.print_exp_info(args)
+    # other_tools.print_exp_info(args)
       
     # return one intance of trainer
     trainer = __import__(f"{args.trainer}_trainer", fromlist=["something"]).CustomTrainer(args) if args.trainer != "base" else BaseTrainer(args) 
     logger.info("Training from scratch ...")          
-    start_time = time.time()
     for epoch in range(args.epochs+1):
-        # if (epoch) % args.test_period == 1: trainer.val(epoch)
-        epoch_time = time.time()-start_time
-        if trainer.rank == 0: logger.info("Time info >>>>  elapsed: %.2f mins\t"%(epoch_time/60)+"remain: %.2f mins"%((args.epochs/(epoch+1e-7)-1)*epoch_time/60))
+        logger.info(f'exp: {args.wandb_run}')
         if epoch != args.epochs:
             if args.ddp: trainer.train_loader.sampler.set_epoch(epoch)
             trainer.tracker.reset()
             trainer.train(epoch)
         if args.ddp: trainer.val_loader.sampler.set_epoch(epoch)
         # trainer.val(epoch)
-        # if args.debug:
-        #     other_tools.save_checkpoints(os.path.join(trainer.checkpoint_path, f"last_{epoch}.bin"), trainer.model, opt=None, epoch=None, lrs=None)
-        #     other_tools.load_checkpoints(trainer.model, os.path.join(trainer.checkpoint_path, f"last_{epoch}.bin"), args.g_name)
-        #     #other_tools.load_checkpoints(trainer.model, "/home/s24273/datasets/hub/pretrained_vq/last_140.bin", args.g_name)
-        #     trainer.test(epoch)
         if (epoch) % args.test_period == 0 and epoch !=0:
             if rank == 0:
                 other_tools.save_checkpoints(os.path.join(trainer.checkpoint_path, f"last_{epoch}.bin"), trainer.model, opt=None, epoch=None, lrs=None)
-                # trainer.test(epoch)
-       
+                # trainer.test(epoch)       
     if rank == 0:
-        # for k, v in trainer.tracker.values.items():
-        #     if trainer.tracker.loss_meters[k]['val'].count > 0:
-        #         other_tools.load_checkpoints(trainer.model, os.path.join(trainer.checkpoint_path, f"{k}.bin"), args.g_name)
-        #         logger.info(f"inference on ckpt {k}_val_{v['val']['best']['epoch']}:")
-        #         trainer.test(v['val']['best']['epoch'])
-        # other_tools.record_trial(args, trainer.tracker)
-        # wandb.log({"fid_test": trainer.tracker["fid"]["test"]["best"]})
         if args.stat == "ts":
             trainer.writer.close()
         else:
@@ -304,7 +287,7 @@ def main_worker(rank, world_size, args):
             
 if __name__ == "__main__":
     os.environ["MASTER_ADDR"]='127.0.0.1'
-    os.environ["MASTER_PORT"]='8674'
+    os.environ["MASTER_PORT"]='866' + os.environ['CUDA_VISIBLE_DEVICES']
     #os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
     args = config.parse_args()
     if args.ddp:

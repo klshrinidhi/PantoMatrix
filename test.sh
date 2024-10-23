@@ -4,7 +4,28 @@ set -o nounset
 set -o errexit
 set -o xtrace
 
-export CUDA_VISIBLE_DEVICES=4
+export OMP_NUM_THREADS=2
+export CUDA_VISIBLE_DEVICES=0
+rm -r meshes
+
+# python \
+#     scripts/EMAGE_2024/test.py \
+#     --config scripts/EMAGE_2024/configs/cnn_vqvae_lower_30.yaml
+# python \
+#     scripts/EMAGE_2024/test.py \
+#     --config scripts/EMAGE_2024/configs/cnn_vqvae_upper_30.yaml
+# python \
+#     scripts/EMAGE_2024/test.py \
+#     --config scripts/EMAGE_2024/configs/cnn_vqvae_hands_30.yaml
+
+# python \
+#     scripts/EMAGE_2024/test.py \
+#     --config scripts/EMAGE_2024/configs/cnn_vqvae_face_30.yaml
+
 python \
     scripts/EMAGE_2024/test.py \
-    --config scripts/EMAGE_2024/configs/cnn_vqvae_upper_30.yaml
+    --config scripts/EMAGE_2024/configs/cnn_vqvae_full_30.yaml
+
+# python \
+#     scripts/EMAGE_2024/test.py \
+#     --config scripts/EMAGE_2024/configs/cnn_vqvae_all_30.yaml

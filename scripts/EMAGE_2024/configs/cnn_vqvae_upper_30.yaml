@@ -4,12 +4,12 @@ stat: wandb # ts
 training_speakers: [2]
 root_path: ./
 out_path: ./outputs/
-cache_path: datasets/cache/upper_amass30_beat2/
+cache_path: datasets/cache/upper_beat2ss/
 project: emage
-wandb_run: upper_amass30_beat2_c256_test
-data_path: ./emage_amass30_beat2/
+wandb_run: upper_b2ss_c256_r1v4a4v4v4a4c4g1_test
+data_path: ./emage_beat2ss/
 e_path:  weights/AESKConv_240_100.bin
-test_ckpt: outputs/custom/0925_231136_cnn_vqvae_upper_30/epoch_0005_iter_12000.bin # EMAGE/pretrained_vq/upper_vertex_1layer_710.bin
+test_ckpt: outputs/custom/upper_b2ss_c256_r1v4a4v4v4a4c4g1/epoch_0138_iter_01613.bin
 data_path_1: ./EMAGE/
 #torch_hub_path: datasets/hub/
 additional_data: False
@@ -71,13 +71,18 @@ trainer: ae
 #decode_fusion: cat
 #n_layer: 2
 #hidden_size: 512
-rec_weight: 1
 rec_pos_weight: 1
-rec_ver_weight: 1
+rec_weight: 1
+rec_vel_weight: 4
+rec_acc_weight: 4
+rec_ver_weight: 4
+rec_ver_vel_weight: 4
+rec_ver_acc_weight: 4
+comm_weight: 4
+grad_norm: 1
 # rec_fac_weight: 1
 #ita_weight: 0
 #iwa_weight: 0
 #fusion_mode: sum
-# grad_norm: 1
 epochs: 500
 test_period: 1

@@ -266,7 +266,7 @@ class CustomDataset(Dataset):
                 else:
                     shape_each_file = np.repeat(pose_data["betas"].reshape(1, 300), pose_each_file.shape[0], axis=0)
                 if self.args.facial_rep is not None:
-                    logger.info(f"# ---- Building cache for Facial {id_pose} and Pose {id_pose} ---- #")
+                    # logger.info(f"# ---- Building cache for Facial {id_pose} and Pose {id_pose} ---- #")
                     facial_each_file = pose_data["expressions"][::stride]
                     if self.args.facial_norm: 
                         facial_each_file = (facial_each_file - self.mean_facial) / self.std_facial
