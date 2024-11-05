@@ -1,14 +1,15 @@
 is_train: True
 ddp: False
-stat: ts
+stat: wandb
 training_speakers: [2]
 root_path: ./
-out_path: ./outputs/audio2pose/
-cache_path: datasets/beat_cache/beat_smplx_en_lower/
-project: mage_smplx
-data_path: ./BEAT2/beat_english_v2.0.0/
+out_path: ./outputs/
+cache_path: datasets/cache/lowerfoot_a30_b2ss/
+project: emage
+wandb_run: lowerfoot_a30b2ss_r1v4a4v4v4a4c4g1
+data_path: ./emage_amass30_beat2ss/
 e_path:  weights/AESKConv_240_100.bin
-test_ckpt: weights/multi.bin
+# test_ckpt: weights/multi.bin
 data_path_1: ./EMAGE/
 #torch_hub_path: datasets/hub/
 additional_data: False
@@ -22,7 +23,7 @@ pose_fps: 30
 
 
 vae_test_len: 64
-vae_test_dim: 61
+vae_test_dim: 58
 vae_test_stride: 20
 vae_length: 256
 vae_codebook_size: 256
@@ -30,7 +31,7 @@ vae_layer: 4
 vae_grow: [1,1,2,1]
 variational: False
 
-pose_dims: 61
+pose_dims: 58
 pose_length: 64
 stride: 20
 facial_dims: 100
@@ -43,7 +44,7 @@ g_name: VQVAEConvZero
 #eval_model: motion_autoencoder
 #e_name: HalfEmbeddingNet
 trainer: aelowerfoot
-decay_epochs: 780
+decay_epochs: 9999
 # audio_f: 256
 # a_pre_encoder: tcn_camn
 # a_encoder: lp
@@ -69,13 +70,20 @@ decay_epochs: 780
 #decode_fusion: cat
 #n_layer: 2
 #hidden_size: 512
-rec_weight: 1
+foot_weight: 20
 rec_pos_weight: 1
-rec_ver_weight: 1
+rec_weight: 1
+rec_vel_weight: 4
+rec_acc_weight: 4
+rec_ver_weight: 4
+rec_ver_vel_weight: 4
+rec_ver_acc_weight: 4
+comm_weight: 4
+grad_norm: 1
 # rec_fac_weight: 1
 #ita_weight: 0
 #iwa_weight: 0
 #fusion_mode: sum
 # grad_norm: 1
 epochs: 800
-test_period: 100
+test_period: 1

@@ -188,6 +188,47 @@ class VQEncoderV5(nn.Module):
         # print(outputs.shape)
         return outputs
 
+class VQEncoderDS(nn.Module):
+    def __init__(self, args):
+        super(VQEncoderDS, self).__init__()
+        n_down = args.vae_layer
+        channels = [args.vae_test_dim] + ([args.vae_length] * n_down)
+        layers = list()
+        for i in range(n_down):
+            stride = 1 if i == 0 else 2
+            layers.append(nn.Conv1d(channels[i],channels[i+1],3,stride,1))
+            layers.append(nn.LeakyReLU(0.2,inplace=True))
+            layers.append(ResBlock(channels[i+1]))
+        self.main = nn.Sequential(*layers)
+        self.main.apply(init_weight)
+
+    def forward(self, inputs):
+        inputs = inputs.permute(0,2,1)
+        outputs = self.main(inputs).permute(0,2,1)
+        return outputs
+    
+class VQDecoderUS(nn.Module):
+    def __init__(self, args):
+        super(VQDecoderUS, self).__init__()
+        n_up = args.vae_layer
+        channels = args.vae_length
+        out_dim = args.vae_test_dim
+        layers = list()
+        for i in range(n_up):
+            layers.append(ResBlock(channels))
+            if i < n_up-1:
+                layers.append(nn.Upsample(scale_factor=2,mode='nearest'))
+            layers.append(nn.Conv1d(channels,channels,3,1,1))
+        layers.append(nn.LeakyReLU(0.2,inplace=True))
+        layers.append(nn.Conv1d(channels,out_dim,3,1,1))
+        self.main = nn.Sequential(*layers)
+        self.main.apply(init_weight)
+
+    def forward(self, inputs):
+        inputs = inputs.permute(0, 2, 1)
+        outputs = self.main(inputs).permute(0, 2, 1)
+        return outputs
+
 class VQDecoderV4(nn.Module):
     def __init__(self, args):
         super(VQDecoderV4, self).__init__()

@@ -203,13 +203,13 @@ class CustomDataset(Dataset):
         if self.args.new_cache:
             if os.path.exists(preloaded_dir):
                 shutil.rmtree(preloaded_dir)
-        if os.path.exists(preloaded_dir):
-            logger.info("Found the cache {}".format(preloaded_dir))
-        elif self.loader_type == "test":
+        if self.loader_type == "test":
             self.cache_generation(
                 preloaded_dir, True, 
                 0, 0,
                 is_test=True)
+        elif os.path.exists(preloaded_dir):
+            logger.info("Found the cache {}".format(preloaded_dir))
         else:
             self.cache_generation(
                 preloaded_dir, self.args.disable_filtering, 
@@ -259,12 +259,9 @@ class CustomDataset(Dataset):
                 pose_each_file = pose_each_file[:, self.joint_mask.astype(bool)]
                 # print(pose_each_file.shape)
                 trans_each_file = pose_data["trans"][::stride]
-                if pose_data['betas'].shape == (16,):
-                    betas_ = pose_data['betas']
-                    betas_ = np.concatenate([betas_,np.zeros(300-16,dtype=betas_.dtype)])
-                    shape_each_file = np.repeat(betas_.reshape(1, 300), pose_each_file.shape[0], axis=0)
-                else:
-                    shape_each_file = np.repeat(pose_data["betas"].reshape(1, 300), pose_each_file.shape[0], axis=0)
+                betas = pose_data['betas']
+                betas = np.pad(betas,(0,300-betas.shape[0]),'constant',constant_values=0)
+                shape_each_file = np.repeat(betas.reshape(1, 300), pose_each_file.shape[0], axis=0)
                 if self.args.facial_rep is not None:
                     # logger.info(f"# ---- Building cache for Facial {id_pose} and Pose {id_pose} ---- #")
                     facial_each_file = pose_data["expressions"][::stride]

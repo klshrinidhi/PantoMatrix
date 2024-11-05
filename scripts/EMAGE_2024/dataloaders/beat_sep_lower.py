@@ -265,12 +265,15 @@ class CustomDataset(Dataset):
                 stride = int(30/self.args.pose_fps)
                 pose_each_file = pose_data["poses"][::stride] 
                 trans_each_file = pose_data["trans"][::stride]
-                shape_each_file = np.repeat(pose_data["betas"].reshape(1, 300), pose_each_file.shape[0], axis=0)
-                
+                betas = pose_data['betas']
+                betas = np.pad(betas,(0,300-betas.shape[0]),'constant',constant_values=0)
+                shape_each_file = np.repeat(betas.reshape(1, 300), pose_each_file.shape[0], axis=0)                
                 assert self.args.pose_fps == 30, "should 30"
                 m_data = np.load(pose_file, allow_pickle=True)
-                betas, poses, trans, exps = m_data["betas"], m_data["poses"], m_data["trans"], m_data["expressions"]
+                betas, poses, trans = m_data["betas"], m_data["poses"], m_data["trans"]
                 n, c = poses.shape[0], poses.shape[1]
+                exps = m_data.get('expressions',np.zeros((n,100),dtype=np.float32))
+                betas = np.pad(betas,(0,300-betas.shape[0]),'constant',constant_values=0)
                 betas = betas.reshape(1, 300)
                 betas = np.tile(betas, (n, 1))
                 betas = torch.from_numpy(betas).cuda().float()

@@ -230,6 +230,7 @@ def parse_args():
     parser.add('--face_weight', default=0.0, type=float)
     parser.add('--face_vel_weight', default=0.0, type=float)
     parser.add('--face_acc_weight', default=0.0, type=float)
+    parser.add('--foot_weight',default=0.0,type=float)
 #    parser.add("--gan_noise_size", default=0, type=int)
     # --------------- ha2g -------------------------- #
     parser.add("--n_pre_poses", default=4, type=int)

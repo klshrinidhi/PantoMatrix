@@ -1,3 +1,5 @@
+import pickle
+import pathlib
 import os
 import signal
 import time
@@ -19,6 +21,7 @@ import smplx
 from torch.utils.tensorboard import SummaryWriter
 import wandb
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 from utils import config, logger_tools, other_tools, metric
 from dataloaders import data_tools
 from dataloaders.build_vocab import Vocab
@@ -203,8 +206,17 @@ def main_worker(rank, world_size, args):
     trainer = __import__(f"{args.trainer}_trainer", fromlist=["something"]).CustomTrainer(args) if args.trainer != "base" else BaseTrainer(args) 
     other_tools.load_checkpoints(trainer.model, args.test_ckpt, args.g_name)
     trainer.test(999)
-    # trainer.test_scores()
     
+    # ckpt_d = pathlib.Path(args.test_ckpt).parent
+    # out_d = pathlib.Path('test_losses')
+    # for ckpt_f in tqdm(list(sorted(ckpt_d.glob('epoch_*_iter_00000.bin'))),desc='epoch'):
+    #     if '0089' in ckpt_f.name:
+    #         break
+    #     other_tools.load_checkpoints(trainer.model, str(ckpt_f), args.g_name)
+    #     losses = trainer.test_losses()
+    #     out_f = out_d / ckpt_f.parent.name / ckpt_f.with_suffix('.pkl').name
+    #     out_f.parent.mkdir(parents=True,exist_ok=True)
+    #     pickle.dump(losses,open(out_f,'wb'))
     
             
 if __name__ == "__main__":

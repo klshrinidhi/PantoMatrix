@@ -209,7 +209,41 @@ class VQVAEConvZero(nn.Module):
         z_q = self.quantizer.get_codebook_entry(index)
         rec_pose = self.decoder(z_q)
         return rec_pose
+
+class VQVAEConvZeroDSUS(nn.Module):
+    def __init__(self, args):
+        super(VQVAEConvZeroDSUS, self).__init__()
+        self.encoder = VQEncoderDS(args)
+        self.quantizer = Quantizer(args.vae_codebook_size, args.vae_length, args.vae_quantizer_lambda)
+        self.decoder = VQDecoderUS(args)
+        
+    def forward(self, inputs):
+        pre_latent = self.encoder(inputs)
+        # print(pre_latent.shape)
+        embedding_loss, vq_latent, _, perplexity = self.quantizer(pre_latent)
+        rec_pose = self.decoder(vq_latent)
+        return {
+            "poses_feat":vq_latent,
+            "embedding_loss":embedding_loss,
+            "perplexity":perplexity,
+            "rec_pose": rec_pose
+            }
     
+    def map2index(self, inputs):
+        pre_latent = self.encoder(inputs)
+        index = self.quantizer.map2index(pre_latent)
+        return index
+    
+    def map2latent(self, inputs):
+        pre_latent = self.encoder(inputs)
+        index = self.quantizer.map2index(pre_latent)
+        z_q = self.quantizer.get_codebook_entry(index)
+        return z_q
+    
+    def decode(self, index):
+        z_q = self.quantizer.get_codebook_entry(index)
+        rec_pose = self.decoder(z_q)
+        return rec_pose
 
 class VAEConvZero(nn.Module):
     def __init__(self, args):
