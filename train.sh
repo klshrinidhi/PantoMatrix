@@ -5,7 +5,7 @@ set -o errexit
 set -o xtrace
 
 export OMP_NUM_THREADS=2
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=7
 
 # python \
 #     scripts/EMAGE_2024/train.py \
@@ -30,12 +30,12 @@ export CUDA_VISIBLE_DEVICES=2
 # python \
 #     scripts/EMAGE_2024/train.py \
 #     --config scripts/EMAGE_2024/configs/cnn_vqvae_upper_30_dsus.yaml
-python \
-    scripts/EMAGE_2024/train.py \
-    --config scripts/EMAGE_2024/configs/cnn_vqvae_hands_30_dsus.yaml
 # python \
 #     scripts/EMAGE_2024/train.py \
-#     --config scripts/EMAGE_2024/configs/cnn_vqvae_face_30.yaml
+#     --config scripts/EMAGE_2024/configs/cnn_vqvae_hands_30_dsus.yaml
+python \
+    scripts/EMAGE_2024/train.py \
+    --config scripts/EMAGE_2024/configs/cnn_vqvae_face_30_dsus.yaml
 
 # python \
 #     scripts/EMAGE_2024/train.py \

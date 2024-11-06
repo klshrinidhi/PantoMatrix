@@ -4,12 +4,12 @@ stat: wandb
 training_speakers: [2]
 root_path: ./
 out_path: ./outputs/
-cache_path: datasets/cache/face_a30_b2ss/
+cache_path: datasets/cache/face_a30b2/
 project: emage
-wandb_run: face_a30b2ss_r1v4a4v4v4a4c4f1v4a4g1
+wandb_run: face_a30b2_r1v4a4v4v4a4c4f1v4a4g1_dsus
 data_path: ./emage_amass30_beat2ss/
 e_path:  weights/AESKConv_240_100.bin
-# test_ckpt: outputs/custom/face_beat2ss_c256/epoch_0033_iter_03226.bin
+test_ckpt: outputs/custom/face_a30b2ss_r1v4a4v4v4a4c4f1v4a4g1_dsus/epoch_0011_iter_03222.bin
 data_path_1: ./EMAGE/
 #torch_hub_path: datasets/hub/
 additional_data: False
@@ -28,7 +28,7 @@ vae_test_dim: 106
 vae_test_stride: 20
 vae_length: 256
 vae_codebook_size: 256
-vae_layer: 2
+vae_layer: 3
 vae_grow: [1,1,2,1]
 variational: False
 
@@ -42,7 +42,7 @@ batch_size: 64
 lr_base: 3e-4
 decay_epochs: 9999
 model: motion_representation
-g_name: VQVAEConvZero
+g_name: VQVAEConvZeroDSUS
 #eval_model: motion_autoencoder
 #e_name: HalfEmbeddingNet
 trainer: aeface

@@ -265,7 +265,7 @@ def main_worker(rank, world_size, args):
       
     # return one intance of trainer
     trainer = __import__(f"{args.trainer}_trainer", fromlist=["something"]).CustomTrainer(args) if args.trainer != "base" else BaseTrainer(args) 
-    logger.info("Training from scratch ...")          
+    other_tools.load_checkpoints(trainer.model,args.test_ckpt,args.g_name)
     for epoch in range(args.epochs+1):
         logger.info(f'exp: {args.wandb_run}')
         if epoch != args.epochs:

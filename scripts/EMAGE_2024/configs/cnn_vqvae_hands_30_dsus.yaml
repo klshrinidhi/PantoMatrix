@@ -4,12 +4,12 @@ stat: wandb # ts
 training_speakers: [2]
 root_path: ./
 out_path: ./outputs/
-cache_path: datasets/cache/hands_a30_b2ss/
+cache_path: datasets/cache/hands_a30b2/
 project: emage
-wandb_run: hands_a30b2ss_b96_r1v4a4v4v4a4c4g1_dsus_test
+wandb_run: hands_a30b_r1v4a4v4v4a4c4g1_dsus
 data_path: ./emage_amass30_beat2ss/
 e_path:  weights/AESKConv_240_100.bin
-test_ckpt: outputs/custom/hands_a30b2ss_r1v4a4v4v4a4c4g1_dsus/epoch_0017_iter_04050.bin
+test_ckpt: outputs/custom/hands_a30b2ss_r1v4a4v4v4a4c4g1_dsus/epoch_0029_iter_00000.bin
 data_path_1: ./EMAGE/
 #torch_hub_path: datasets/hub/
 additional_data: False
@@ -37,7 +37,7 @@ stride: 20
 facial_dims: 100
 word_index_num: 11195
 word_dims: 300
-batch_size: 96
+batch_size: 64
 lr_base: 3e-4
 decay_epochs: 9999
 model: motion_representation

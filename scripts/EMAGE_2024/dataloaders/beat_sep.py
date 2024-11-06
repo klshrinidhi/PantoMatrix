@@ -203,13 +203,13 @@ class CustomDataset(Dataset):
         if self.args.new_cache:
             if os.path.exists(preloaded_dir):
                 shutil.rmtree(preloaded_dir)
-        if self.loader_type == "test":
+        elif os.path.exists(preloaded_dir):
+            logger.info("Found the cache {}".format(preloaded_dir))
+        elif self.loader_type == "test":
             self.cache_generation(
                 preloaded_dir, True, 
                 0, 0,
                 is_test=True)
-        elif os.path.exists(preloaded_dir):
-            logger.info("Found the cache {}".format(preloaded_dir))
         else:
             self.cache_generation(
                 preloaded_dir, self.args.disable_filtering, 
