@@ -5,7 +5,7 @@ set -o errexit
 set -o xtrace
 
 export OMP_NUM_THREADS=2
-export CUDA_VISIBLE_DEVICES=7
+export CUDA_VISIBLE_DEVICES=1
 
 # python \
 #     scripts/EMAGE_2024/train.py \

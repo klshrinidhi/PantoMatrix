@@ -276,7 +276,7 @@ class CustomTrainer(train.BaseTrainer):
                 
                 self.tracker.update_meter("loss","val",g_loss_final.item())
         self.val_recording(epoch,train_its)
-            
+
     def test(self, epoch):
         start_time = time.time()
         total_length = 0
@@ -388,6 +388,90 @@ class CustomTrainer(train.BaseTrainer):
                     ply_f = f'{ply_d}/{i:05}.ply'
                     mesh = trimesh.Trimesh(vertices=vertices[i],
                                             faces=self.smplx.faces,
+                                            process=False)
+                    mesh.export(ply_f)
+        end_time = time.time() - start_time
+        logger.info(f"total inference time: {int(end_time)} s for {int(total_length/self.args.pose_fps)} s motion")
+
+    def test_flame(self, epoch):
+        start_time = time.time()
+        total_length = 0
+        test_seq_list = self.test_data.selected_file
+        self.model.eval()
+        from tqdm import tqdm,trange
+        deca_d = '/vision/changan/shrinidhi/DECA'
+        sys.path.append(deca_d)
+        from yacs.config import CfgNode
+        from decalib.models.FLAME import FLAME
+        cfg = CfgNode({'flame_model_path':f'{deca_d}/data/generic_model.pkl',
+                       'flame_lmk_embedding_path':f'{deca_d}/data/landmark_embedding.npy',
+                       'n_shape':100,
+                       'n_exp':50,
+                       'n_pose':6})
+        flame = FLAME(cfg).cuda()
+        max_seq_len = 900
+        max_num_samples = 12
+        with torch.no_grad():
+            for its, dict_data in tqdm(enumerate(self.test_loader),desc='examples',total=len(self.test_loader)):
+                if its >= max_num_samples:
+                    continue
+                tar_pose = dict_data["pose"][:,:max_seq_len].cuda()
+                tar_exps = dict_data["facial"][:,:max_seq_len].cuda()
+                bs, n, j = tar_pose.shape[0], tar_pose.shape[1], self.joints
+                tar_pose = rc.axis_angle_to_matrix(tar_pose.reshape(bs, n, j, 3))
+                tar_pose = rc.matrix_to_rotation_6d(tar_pose).reshape(bs, n, j*6)
+                in_tar_pose = torch.cat([tar_pose, tar_exps], -1)
+                ################################################################
+                gt_npz = np.load(self.args.data_path+self.args.pose_rep+"/"+test_seq_list.iloc[its]['id']+'.npz', allow_pickle=True)
+                assert dict_data['pose'].shape[1] <= gt_npz['poses'].shape[0]
+                tar_beta = torch.from_numpy(np.repeat(gt_npz['betas'].reshape(1,300),n,0)).cuda()
+                tar_glob_rot = torch.from_numpy(gt_npz['global_rotation'][:n].astype(np.float32)).cuda()
+                ################################################################
+
+                net_out = self.model(in_tar_pose)
+                rec_pose = net_out["rec_pose"][:, :, :j*6]
+                n = rec_pose.shape[1]
+                tar_pose = tar_pose[:, :n, :]
+                rec_pose = rec_pose.reshape(bs, n, j, 6) 
+                rec_pose = rc.rotation_6d_to_matrix(rec_pose)#
+                rec_pose = rc.matrix_to_axis_angle(rec_pose).reshape(bs*n, j*3)
+
+                rec_exps = net_out["rec_pose"][:, :, j*6:].reshape(bs*n,100)
+                            
+                tar_pose = rc.rotation_6d_to_matrix(tar_pose.reshape(bs, n, j, 6))
+                tar_pose = rc.matrix_to_axis_angle(tar_pose).reshape(bs*n, j*3)
+                
+                total_length += n 
+
+                rec_pose = torch.cat([tar_glob_rot,rec_pose],dim=-1)
+                tar_pose = torch.cat([tar_glob_rot,tar_pose],dim=-1)
+
+                import trimesh
+                assert bs == 1
+                pkl_f = 'meshes/' + test_seq_list.iloc[its]['id'] + '.pkl'
+                os.makedirs('meshes',exist_ok=True)
+                verts,_,_ = flame(shape_params=tar_beta[:,:100],
+                                  expression_params=rec_exps[:,:50],
+                                  pose_params=rec_pose)
+                verts = verts.detach().cpu().numpy()
+                ply_d = 'meshes/' + test_seq_list.iloc[its]['id']
+                os.makedirs(ply_d,exist_ok=True)
+                for i in trange(min(n,max_seq_len),desc='writing rec meshes',leave=False):
+                    ply_f = f'{ply_d}/{i:05}.ply'
+                    mesh = trimesh.Trimesh(vertices=verts[i],
+                                            faces=flame.faces_tensor.cpu().numpy(),
+                                            process=False)
+                    mesh.export(ply_f)
+                verts,_,_ = flame(shape_params=tar_beta[:,:100],
+                                  expression_params=rec_exps[:,:50],
+                                  pose_params=rec_pose)
+                verts = verts.detach().cpu().numpy()
+                ply_d = 'meshes/' + test_seq_list.iloc[its]['id'] + '_gt'
+                os.makedirs(ply_d,exist_ok=True)
+                for i in trange(min(n,max_seq_len),desc='writing tar meshes',leave=False):
+                    ply_f = f'{ply_d}/{i:05}.ply'
+                    mesh = trimesh.Trimesh(vertices=verts[i],
+                                            faces=flame.faces_tensor.cpu().numpy(),
                                             process=False)
                     mesh.export(ply_f)
         end_time = time.time() - start_time

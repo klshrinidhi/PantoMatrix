@@ -206,6 +206,7 @@ def main_worker(rank, world_size, args):
     trainer = __import__(f"{args.trainer}_trainer", fromlist=["something"]).CustomTrainer(args) if args.trainer != "base" else BaseTrainer(args) 
     other_tools.load_checkpoints(trainer.model, args.test_ckpt, args.g_name)
     trainer.test(999)
+    # trainer.test_flame(999)
     
     # ckpt_d = pathlib.Path(args.test_ckpt).parent
     # out_d = pathlib.Path('test_losses')

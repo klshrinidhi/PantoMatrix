@@ -4,12 +4,12 @@ stat: wandb
 training_speakers: [2]
 root_path: ./
 out_path: ./outputs/
-cache_path: datasets/cache/face_a30b2/
+cache_path: datasets/cache/face_lml/
 project: emage
-wandb_run: face_a30b2_r1v4a4v4v4a4c4f1v4a4g1_dsus
+wandb_run: face_lml_r1v4a4v4v4a4c4f1v4a4g1_dsus # face_a30b2_r1v4a4v4v4a4c4f1v4a4g1_dsus
 data_path: ./emage_amass30_beat2ss/
 e_path:  weights/AESKConv_240_100.bin
-test_ckpt: outputs/custom/face_a30b2ss_r1v4a4v4v4a4c4f1v4a4g1_dsus/epoch_0011_iter_03222.bin
+test_ckpt: outputs/custom/face_a30b2_r1v4a4v4v4a4c4f1v4a4g1_dsus/epoch_0059_iter_03645.bin # outputs/custom/face_a30b2ss_r1v4a4v4v4a4c4f1v4a4g1_dsus/epoch_0011_iter_03222.bin
 data_path_1: ./EMAGE/
 #torch_hub_path: datasets/hub/
 additional_data: False

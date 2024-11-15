@@ -297,6 +297,7 @@ class CustomTrainer(train.BaseTrainer):
                 tar_betas = torch.from_numpy(np.repeat(tar_betas.reshape(1,300),n,0)).cuda()
                 tar_trans = torch.from_numpy(gt_npz['trans'][:n].astype(np.float32)).cuda() * 0
                 tar_exps = gt_npz.get('expressions',np.zeros((n,100),dtype=np.float32))
+                tar_exps = np.pad(tar_exps,((0,0),(0,100-tar_exps.shape[1])),'constant',constant_values=0)
                 tar_exps = torch.from_numpy(tar_exps[:n].astype(np.float32)).cuda() * 0
                 ################################################################
 

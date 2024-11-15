@@ -4,12 +4,12 @@ stat: wandb # ts
 training_speakers: [2]
 root_path: ./
 out_path: ./outputs/
-cache_path: datasets/cache/lower_a30_b2ss/
+cache_path: datasets/cache/lower_a30b2/
 project: emage
-wandb_run: lower_a30b2ss_r1v4a4v4v4a4c4g1_test
+wandb_run: lower_a30b2_r1v4a4v4v4a4c4g1_test
 data_path: ./emage_amass30_beat2ss/
 e_path:  weights/AESKConv_240_100.bin
-test_ckpt: outputs/custom/lower_b2ss_c256_r1v4a4v4v4a4c4g1/epoch_0030_iter_02025.bin # outputs/custom/lower_a30b2ss_r1v4a4v4v4a4c4g1/epoch_0030_iter_02025.bin
+test_ckpt: outputs/custom/lower_a30b2_r1v4a4v4v4a4c4g1/epoch_0060_iter_00000.bin
 data_path_1: ./EMAGE/
 #torch_hub_path: datasets/hub/
 additional_data: False
